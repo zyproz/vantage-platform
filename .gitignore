@@ -1,0 +1,4 @@
+*.db
+*.log
+bot.pid
+__pycache__/

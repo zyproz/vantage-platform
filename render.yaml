@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: vantage-platform
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DB_PATH
+        value: /tmp/vantage.db
+      - key: TG_TOKEN
+        value: 8858889412:AAElLpyQCIqw3PIYeAJtxeH56DQgXBUn6Ls
+      - key: TG_ADMIN
+        value: "5354522228"
