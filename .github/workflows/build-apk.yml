@@ -1,0 +1,67 @@
+name: Build ZyCrypto APK
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: 9477386
+
+      - name: Accept licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install Android platform
+        run: sdkmanager "build-tools;34.0.0" "platforms;android-34"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: "8.4"
+
+      - name: Build APK
+        working-directory: apk
+        run: gradle assembleDebug --no-daemon
+
+      - name: Prepare release
+        run: |
+          mkdir -p out
+          cp apk/app/build/outputs/apk/debug/app-debug.apk out/ZyCrypto.apk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZyCrypto-APK
+          path: out/ZyCrypto.apk
+          retention-days: 90
+
+      - name: GitHub Release (lien permanent)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "ZyCrypto APK — Derniere version"
+          body: |
+            ## ZyCrypto Platform
+            Build auto depuis le dernier push.
+            
+            **Android :** Telecharge ZyCrypto.apk ci-dessous
+            **iPhone/Web :** https://vantage-platform-gi6p.onrender.com
+          files: out/ZyCrypto.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
