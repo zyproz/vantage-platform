@@ -695,6 +695,12 @@ class Handler(BaseHTTPRequestHandler):
         auth=self.headers.get("Authorization","")
         return auth.replace("Bearer ","") if auth.startswith("Bearer ") else None
 
+    def do_HEAD(self):
+        """UptimeRobot envoie HEAD - répondre OK"""
+        self.send_response(200)
+        self.send_header("Content-Type","text/plain")
+        self.end_headers()
+
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin","*")
