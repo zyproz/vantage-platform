@@ -724,6 +724,11 @@ class Handler(BaseHTTPRequestHandler):
                 "btc": round(get_btc(),2), "gold": round(get_gold(),2),
                 "positions": pos, "trades": trades
             })
+        elif path == "/ping" or path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type","text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
         elif path == "/api/ohlc":
             qs = parse_qs(urlparse(self.path).query)
             u = auth_user(self.get_token())
