@@ -332,21 +332,44 @@ def load_from_github():
             db.commit(); db.close()
             print(f"  ✅ {len(users_data)} users chargés")
 
-        # Positions
+        # Positions — supporte format v1.3 (sym→pos) ET v1.4+ (pos_id→pos)
         pos_data, _ = gh_get("positions.json")
         if pos_data:
             db = get_db()
             db.execute("DELETE FROM positions")
-            for user_id, syms in pos_data.items():
-                for sym, p in syms.items():
-                    pid = secrets.token_hex(8)
+            for user_id, pos_dict in pos_data.items():
+                for key, p in pos_dict.items():
+                    # v1.4+: key=pos_id, p contient "sym"
+                    # v1.3:  key=symbol, p contient "d","e","v"...
+                    if "sym" in p:
+                        pos_id = key; sym = p["sym"]
+                    else:
+                        pos_id = secrets.token_hex(12); sym = key
+                    tpsl = p.get("tpsl", 1)
                     db.execute("""INSERT OR IGNORE INTO positions
-                                  (id,user_id,symbol,direction,entry,volume,tp,sl,marge,opened_at)
-                                  VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                               (pid,user_id,sym,p["d"],p["e"],p["v"],p["tp"],p["sl"],p["m"],p.get("ts","")))
+                                  (id,user_id,symbol,direction,entry,volume,tp,sl,marge,tpsl_active,opened_at)
+                                  VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                               (pos_id,user_id,sym,p["d"],p["e"],p["v"],p["tp"],p["sl"],p["m"],tpsl,p.get("ts","")))
             db.commit(); db.close()
             total_pos = sum(len(s) for s in pos_data.values())
             print(f"  ✅ {total_pos} positions chargées")
+
+        # Triggers actifs
+        try:
+            trig_data, _ = gh_get("triggers.json")
+            if trig_data:
+                db = get_db()
+                db.execute("UPDATE triggers SET active=0")  # Reset
+                for user_id, tlist in trig_data.items():
+                    for t in tlist:
+                        db.execute("""INSERT OR IGNORE INTO triggers
+                                      (id,user_id,symbol,direction,target_price,condition,active)
+                                      VALUES (?,?,?,?,?,?,1)""",
+                                   (t["id"],user_id,t["sym"],t["dir"],t["target"],t["cond"]))
+                db.commit(); db.close()
+                total_t = sum(len(tl) for tl in trig_data.values())
+                print(f"  ✅ {total_t} triggers chargés")
+        except: pass
 
         # Trades
         trades_data, _ = gh_get("trades.json")
@@ -381,14 +404,18 @@ def save_to_github():
                            "bot_actif":bool(r["bot_actif"]),"is_admin":bool(r["is_admin"]),
                            "meta_token":r["meta_token"] or "","account_id":r["account_id"] or ""}
                 for r in rows}
-        # Positions
+        # Positions — format v1.4+ : clé = pos_id, inclut tpsl_active
         rows = db.execute("SELECT * FROM positions").fetchall()
         positions = {}
         for r in rows:
-            if r["user_id"] not in positions: positions[r["user_id"]] = {}
-            positions[r["user_id"]][r["symbol"]] = {
-                "d":r["direction"],"e":r["entry"],"v":r["volume"],
-                "tp":r["tp"],"sl":r["sl"],"m":r["marge"],"ts":r["opened_at"]
+            uid = r["user_id"]
+            if uid not in positions: positions[uid] = {}
+            keys = list(r.keys())
+            positions[uid][r["id"]] = {
+                "sym":r["symbol"],"d":r["direction"],"e":r["entry"],"v":r["volume"],
+                "tp":r["tp"],"sl":r["sl"],"m":r["marge"],
+                "tpsl":r["tpsl_active"] if "tpsl_active" in keys else 1,
+                "ts":r["opened_at"]
             }
         # Trades
         rows = db.execute("SELECT * FROM trades").fetchall()
@@ -399,10 +426,23 @@ def save_to_github():
             trades[uid].append({"ts":r["closed_at"],"s":r["symbol"],"d":r["direction"],
                                  "e":r["entry"],"x":r["exit_price"],"v":r["volume"],
                                  "pnl":r["pnl"],"r":r["reason"] or ""})
+        # Triggers actifs
+        triggers_save = {}
+        try:
+            rows = db.execute("SELECT * FROM triggers WHERE active=1").fetchall()
+            for r in rows:
+                uid = r["user_id"]
+                if uid not in triggers_save: triggers_save[uid] = []
+                triggers_save[uid].append({
+                    "id":r["id"],"sym":r["symbol"],"dir":r["direction"],
+                    "target":r["target_price"],"cond":r["condition"]
+                })
+        except: pass
         db.close()
 
         # Push vers GitHub
-        for fname, data in [("users.json",users),("positions.json",positions),("trades.json",trades)]:
+        for fname, data in [("users.json",users),("positions.json",positions),
+                            ("trades.json",trades),("triggers.json",triggers_save)]:
             _, sha = gh_get(fname)
             gh_put(fname, data, sha)
     except Exception as e:
@@ -1439,6 +1479,8 @@ class H(BaseHTTPRequestHandler):
                 tid=save_trigger(u["id"],sym,direction,target,condition)
                 ic=SYMBOLS[sym]["icon"]; lbl="🟢 LONG" if direction=="BUY" else "🔴 SHORT"
                 cond_txt="<=" if condition=="below" else ">="
+                tg(f"🎯 *Ordre limite créé !*\n{ic} {sym} {lbl}\nSi prix {cond_txt} `${target:,.2f}`")
+                threading.Thread(target=save_to_github,daemon=True).start()
                 self.sj({"ok":True,"tid":tid,"msg":f"🎯 Ordre: {ic} {sym} {lbl} si ${target:,.2f} {cond_txt}"})
             elif p=="/api/trigger/delete":
                 u=auth(self.tok())
@@ -1472,6 +1514,7 @@ class H(BaseHTTPRequestHandler):
                             price_k=get_price(p["sym"]) or float(p["e"])
                             pnl=close_trade_by_id(p["id"],price_k,"🔒 Fermer tout")
                             if pnl is not None: tot+=pnl
+                        threading.Thread(target=save_to_github,daemon=True).start()
                         u2=get_user_by_id(uid)
                         msg=f"🔒 Tout fermé | {tot:+.4f}€ | Solde: {u2['balance']:.2f}€"
                     else:
@@ -1484,6 +1527,7 @@ class H(BaseHTTPRequestHandler):
                         price=get_price(row["symbol"]) or float(row["entry"])
                         pnl=close_trade_by_id(pid,price,"🔒 Fermeture manuelle")
                         if pnl is not None:
+                            threading.Thread(target=save_to_github,daemon=True).start()
                             u2=get_user_by_id(uid)
                             msg=f"🔒 {row['symbol']} fermé | {pnl:+.4f}€ | Solde: {u2['balance']:.2f}€"
                         else: ok=False; msg="Position introuvable"
@@ -1495,6 +1539,7 @@ class H(BaseHTTPRequestHandler):
                     if row and row["user_id"]==uid:
                         state=toggle_tpsl(pid)
                         msg=f"TP/SL {'✅ activé' if state else '⏸ désactivé'} pour {row['symbol']}"
+                        threading.Thread(target=save_to_github,daemon=True).start()
                     else: ok=False; msg="Position introuvable"
 
                 else:
