@@ -11,6 +11,7 @@ PORT        = int(os.environ.get("PORT", 8000))
 SECRET_KEY  = os.environ.get("SECRET_KEY", "zyproz-zycrypto-2026-xK9mP2qR")
 TG_TOKEN    = os.environ.get("TG_TOKEN",  "8858889412:AAElLpyQCIqw3PIYeAJtxeH56DQgXBUn6Ls")
 TG_ADMIN_ID = int(os.environ.get("TG_ADMIN", "5354522228"))
+TG_GROUP_ID  = os.environ.get("TG_GROUP_ID", "")  # ID du groupe Telegram (optionnel)
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "ugo.scule@gmail.com").lower()
 GH_TOKEN    = os.environ.get("GH_TOKEN",  "")
 DB_REPO     = os.environ.get("DB_REPO",   "zycrypto-db")
@@ -549,9 +550,17 @@ def get_ohlc(sym,tf="5m",limit=100):
 _threads={}
 
 def tg(msg):
-    try: requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
-                       json={"chat_id":TG_ADMIN_ID,"text":msg,"parse_mode":"Markdown"},timeout=8)
-    except: pass
+    """Envoie une notification Telegram (privé + groupe si configuré)."""
+    targets = [TG_ADMIN_ID]
+    if TG_GROUP_ID:
+        try: targets.append(int(TG_GROUP_ID))
+        except: pass
+    for chat_id in targets:
+        try:
+            requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+                         json={"chat_id":chat_id,"text":msg,"parse_mode":"Markdown"},
+                         timeout=8)
+        except: pass
 
 def open_trade(user_id, sym, direction, price, tp_pct=None, sl_pct=None):
     cfg = get_user_by_id(user_id)
