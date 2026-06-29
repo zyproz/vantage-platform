@@ -92,7 +92,11 @@ def init_db():
     );
     """)
     # Migration: colonnes v1.4
-    for col in ["ALTER TABLE positions ADD COLUMN tpsl_active INTEGER DEFAULT 1"]:
+    for col in [
+        "ALTER TABLE positions ADD COLUMN tpsl_active INTEGER DEFAULT 1",
+        "ALTER TABLE triggers ADD COLUMN tp_pct REAL DEFAULT 2.0",
+        "ALTER TABLE triggers ADD COLUMN sl_pct REAL DEFAULT 2.0"
+    ]:
         try: db.execute(col); db.commit()
         except: pass
     db.commit(); db.close()
@@ -205,11 +209,13 @@ def get_triggers(user_id):
         return [dict(r) for r in rows]
     except: return []
 
-def save_trigger(user_id, symbol, direction, target, condition):
+def save_trigger(user_id, symbol, direction, target, condition, tp_pct=2.0, sl_pct=2.0):
     tid = secrets.token_hex(8)
     try:
         db = get_db()
-        db.execute("INSERT INTO triggers (id,user_id,symbol,direction,target_price,condition) VALUES (?,?,?,?,?,?)",(tid,user_id,symbol,direction,float(target),condition))
+        db.execute("""INSERT INTO triggers (id,user_id,symbol,direction,target_price,condition,tp_pct,sl_pct)
+                      VALUES (?,?,?,?,?,?,?,?)""",
+                   (tid,user_id,symbol,direction,float(target),condition,float(tp_pct),float(sl_pct)))
         db.commit(); db.close()
     except: pass
     return tid
@@ -363,9 +369,10 @@ def load_from_github():
                 for user_id, tlist in trig_data.items():
                     for t in tlist:
                         db.execute("""INSERT OR IGNORE INTO triggers
-                                      (id,user_id,symbol,direction,target_price,condition,active)
-                                      VALUES (?,?,?,?,?,?,1)""",
-                                   (t["id"],user_id,t["sym"],t["dir"],t["target"],t["cond"]))
+                                      (id,user_id,symbol,direction,target_price,condition,tp_pct,sl_pct,active)
+                                      VALUES (?,?,?,?,?,?,?,?,1)""",
+                                   (t["id"],user_id,t["sym"],t["dir"],t["target"],t["cond"],
+                                    t.get("tp",2.0),t.get("sl",2.0)))
                 db.commit(); db.close()
                 total_t = sum(len(tl) for tl in trig_data.values())
                 print(f"  ✅ {total_t} triggers chargés")
@@ -435,7 +442,9 @@ def save_to_github():
                 if uid not in triggers_save: triggers_save[uid] = []
                 triggers_save[uid].append({
                     "id":r["id"],"sym":r["symbol"],"dir":r["direction"],
-                    "target":r["target_price"],"cond":r["condition"]
+                    "target":r["target_price"],"cond":r["condition"],
+                    "tp":r["tp_pct"] if "tp_pct" in list(r.keys()) else 2.0,
+                    "sl":r["sl_pct"] if "sl_pct" in list(r.keys()) else 2.0
                 })
         except: pass
         db.close()
@@ -544,13 +553,14 @@ def tg(msg):
                        json={"chat_id":TG_ADMIN_ID,"text":msg,"parse_mode":"Markdown"},timeout=8)
     except: pass
 
-def open_trade(user_id, sym, direction, price):
+def open_trade(user_id, sym, direction, price, tp_pct=None, sl_pct=None):
     cfg = get_user_by_id(user_id)
     if not cfg: return None
     bal = float(cfg["balance"]); mise = float(cfg["mise"])
     if bal < mise: return None
     lev = int(cfg["levier"])
-    tp_p = float(cfg["tp"])/100; sl_p = float(cfg["sl"])/100
+    tp_p = (tp_pct if tp_pct is not None else float(cfg["tp"])) / 100
+    sl_p = (sl_pct if sl_pct is not None else float(cfg["sl"])) / 100
     vol = max(round((mise*lev/price)/0.0001)*0.0001, 0.0001)
     tp = round(price*(1+tp_p),6) if direction=="BUY" else round(price*(1-tp_p),6)
     sl = round(price*(1-sl_p),6) if direction=="BUY" else round(price*(1+sl_p),6)
@@ -682,12 +692,16 @@ def trigger_monitor():
                     fired = (t["condition"]=="below" and price<=t["target_price"]) or                             (t["condition"]=="above" and price>=t["target_price"])
                     if fired:
                         delete_trigger(t["id"])
-                        result = open_trade(t["user_id"],t["symbol"],t["direction"],price)
+                        tp_p = t.get("tp_pct") or 2.0
+                        sl_p = t.get("sl_pct") or 2.0
+                        result = open_trade(t["user_id"],t["symbol"],t["direction"],price,
+                                            tp_pct=float(tp_p), sl_pct=float(sl_p))
                         if result:
                             info = SYMBOLS.get(t["symbol"],{})
-                            tg(f"🎯 *Ordre déclenché !* {info.get('icon',t['symbol'])} {t['symbol']}"
+                            tg(f"🎯 *Ordre déclenché !* {info.get('icon',t['symbol'])} {t['symbol']}\n"
                                f" {'🟢 LONG' if t['direction']=='BUY' else '🔴 SHORT'}"
-                               f" @ `{price:.4f}$` (cible: `{t['target_price']:.4f}$`)")
+                               f" @ `{price:.4f}$` | TP:{tp_p}% SL:{sl_p}%\n"
+                               f"(cible: `{t['target_price']:.4f}$`)")
                 except: pass
         except: pass
         time.sleep(3)
@@ -1006,6 +1020,16 @@ hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,
     <div style="font-size:8px;color:rgba(245,197,24,.4);font-family:Orbitron,monospace;margin-bottom:4px">PRIX CIBLE ($)</div>
     <input type="number" id="tr-price" placeholder="ex: 59200" step="0.01" style="width:100%;background:rgba(245,197,24,.04);border:1px solid rgba(245,197,24,.2);border-radius:8px;padding:10px 12px;color:#fff;font-family:Rajdhani,sans-serif;font-size:15px;outline:none">
   </div>
+  <div class="g2b" style="margin-bottom:8px">
+    <div>
+      <div style="font-size:8px;color:rgba(34,197,94,.5);font-family:Orbitron,monospace;margin-bottom:4px">TAKE PROFIT %</div>
+      <input type="number" id="tr-tp" value="2.0" min="0.1" step="0.1" style="width:100%;background:rgba(34,197,94,.04);border:1px solid rgba(34,197,94,.2);border-radius:8px;padding:9px 10px;color:#4ade80;font-family:Rajdhani,sans-serif;font-size:14px;font-weight:700;outline:none">
+    </div>
+    <div>
+      <div style="font-size:8px;color:rgba(239,68,68,.5);font-family:Orbitron,monospace;margin-bottom:4px">STOP LOSS %</div>
+      <input type="number" id="tr-sl" value="2.0" min="0.1" step="0.1" style="width:100%;background:rgba(239,68,68,.04);border:1px solid rgba(239,68,68,.2);border-radius:8px;padding:9px 10px;color:#f87171;font-family:Rajdhani,sans-serif;font-size:14px;font-weight:700;outline:none">
+    </div>
+  </div>
   <div id="tr-info" style="text-align:center;font-size:9px;color:rgba(255,255,255,.25);font-family:Orbitron,monospace;margin-bottom:8px;letter-spacing:1px">₿ LONG quand BTC descend au prix cible</div>
   <button onclick="addTrigger()" class="btn bst">🎯 CRÉER L'ORDRE</button>
 </div>
@@ -1103,6 +1127,10 @@ function rf(){
       document.getElementById('bval').textContent=ff(d.balance)+'€';
       document.getElementById('lv').textContent='x'+d.levier;
       document.getElementById('ms').textContent=d.mise;
+      // Préfill TP/SL des ordres limites avec les paramètres actuels
+      var trTp=document.getElementById('tr-tp'); var trSl=document.getElementById('tr-sl');
+      if(trTp&&!trTp._modified) trTp.value=d.tp||2;
+      if(trSl&&!trSl._modified) trSl.value=d.sl||2;
       // Ticker
       var th='';
       Object.keys(_prices).forEach(function(s){
@@ -1248,9 +1276,12 @@ function addTrigger(){
   var sym=document.getElementById('tr-sym').value;
   var dir=document.getElementById('tr-dir').value;
   var price=parseFloat(document.getElementById('tr-price').value);
+  var tp=parseFloat(document.getElementById('tr-tp').value)||2.0;
+  var sl=parseFloat(document.getElementById('tr-sl').value)||2.0;
   if(!price||isNaN(price)){toast('Prix invalide',false);return;}
+  if(tp<=0||sl<=0){toast('TP/SL invalides',false);return;}
   var condition=dir==='BUY'?'below':'above';
-  fetch('/api/trigger/add',{method:'POST',headers:H,body:JSON.stringify({symbol:sym,direction:dir,target:price,condition:condition})})
+  fetch('/api/trigger/add',{method:'POST',headers:H,body:JSON.stringify({symbol:sym,direction:dir,target:price,condition:condition,tp_pct:tp,sl_pct:sl})})
     .then(function(r){return r.json();})
     .then(function(d){toast(d.msg||(d.ok?'Ordre créé':'Erreur'),d.ok);if(d.ok){document.getElementById('tr-price').value='';rfTriggers();}})
     .catch(function(){toast('Erreur réseau',false);});
@@ -1279,7 +1310,9 @@ function rfTriggers(){
       h+='<b style="font-family:Orbitron,monospace;font-size:13px">'+si.icon+' '+t.symbol+'</b>';
       h+='<span style="font-size:8px;padding:2px 8px;border-radius:20px;color:'+(isL?'#22c55e':'#ef4444')+';border:1px solid '+(isL?'rgba(34,197,94,.2)':'rgba(239,68,68,.2)')+';background:'+(isL?'rgba(34,197,94,.1)':'rgba(239,68,68,.1)')+';">'+(isL?'⬆ LONG':'⬇ SHORT')+'</span>';
       h+='</div>';
-      h+='<div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:8px">Si prix '+ct+' <b style="color:var(--g)">$'+ff(t.target_price)+'</b></div>';
+      var tp=t.tp_pct||2; var sl=t.sl_pct||2;
+      h+='<div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:4px">Si prix '+ct+' <b style="color:var(--g)">$'+ff(t.target_price)+'</b></div>';
+      h+='<div style="font-size:10px;margin-bottom:8px"><span style="color:#4ade80">TP: '+tp+'%</span> &nbsp; <span style="color:#f87171">SL: '+sl+'%</span></div>';
       h+='<button onclick="deleteTrigger(\''+t.id+'\')" style="width:100%;padding:8px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#f87171;font-family:Orbitron,monospace;font-size:8px;border-radius:8px;cursor:pointer">✕ ANNULER</button>';
       h+='</div>';
     });
@@ -1293,8 +1326,11 @@ function updateTrInfo(){
   el.textContent=si.icon+' '+(dir.value==='BUY'?'LONG quand '+sym.value+' descend au prix cible':'SHORT quand '+sym.value+' monte au prix cible');
 }
 var trSym=document.getElementById('tr-sym'); var trDir=document.getElementById('tr-dir');
+var trTpEl=document.getElementById('tr-tp'); var trSlEl=document.getElementById('tr-sl');
 if(trSym) trSym.addEventListener('change',updateTrInfo);
 if(trDir) trDir.addEventListener('change',updateTrInfo);
+if(trTpEl) trTpEl.addEventListener('input',function(){this._modified=true;});
+if(trSlEl) trSlEl.addEventListener('input',function(){this._modified=true;});
 
 rf();
 rfTriggers();
@@ -1363,7 +1399,7 @@ class H(BaseHTTPRequestHandler):
                 trades=get_trades(u["id"])
                 prices=get_all_prices()
                 self.sj({"ok":True,"actif":bot_on,"balance":round(float(u["balance"]),2),
-                    "levier":u["levier"],"mise":u["mise"],
+                    "levier":u["levier"],"mise":u["mise"],"tp":u["tp"],"sl":u["sl"],
                     "prices":prices,"positions":positions,"trades":trades})
             elif p=="/api/triggers":
                 u=auth(self.tok())
@@ -1475,13 +1511,14 @@ class H(BaseHTTPRequestHandler):
                 if not u: self.sj({"ok":False},401); return
                 sym=body.get("symbol","BTC"); direction=body.get("direction","BUY")
                 target=float(body.get("target",0)); condition=body.get("condition","below")
+                tp_pct=float(body.get("tp_pct",2.0)); sl_pct=float(body.get("sl_pct",2.0))
                 if not target or sym not in SYMBOLS: self.sj({"ok":False,"error":"Params invalides"}); return
-                tid=save_trigger(u["id"],sym,direction,target,condition)
+                tid=save_trigger(u["id"],sym,direction,target,condition,tp_pct,sl_pct)
                 ic=SYMBOLS[sym]["icon"]; lbl="🟢 LONG" if direction=="BUY" else "🔴 SHORT"
                 cond_txt="<=" if condition=="below" else ">="
-                tg(f"🎯 *Ordre limite créé !*\n{ic} {sym} {lbl}\nSi prix {cond_txt} `${target:,.2f}`")
+                tg(f"🎯 *Ordre créé !* {ic} {sym} {lbl}\nSi prix {cond_txt} `${target:,.2f}` | TP:{tp_pct}% SL:{sl_pct}%")
                 threading.Thread(target=save_to_github,daemon=True).start()
-                self.sj({"ok":True,"tid":tid,"msg":f"🎯 Ordre: {ic} {sym} {lbl} si ${target:,.2f} {cond_txt}"})
+                self.sj({"ok":True,"tid":tid,"msg":f"🎯 {ic} {sym} {lbl} @ ${target:,.2f} | TP:{tp_pct}% SL:{sl_pct}%"})
             elif p=="/api/trigger/delete":
                 u=auth(self.tok())
                 if not u: self.sj({"ok":False},401); return
