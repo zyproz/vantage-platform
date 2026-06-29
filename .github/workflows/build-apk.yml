@@ -44,7 +44,7 @@ jobs:
         with:
           tag_name: latest
           name: "ZyCrypto APK"
-          body: "APK auto. Android: telecharge ZyCrypto.apk. Web/iPhone: https://vantage-platform-gi6p.onrender.com"
+          body: "APK auto-build. Android: telecharge ZyCrypto.apk ci-dessous."
           files: apk/app/build/outputs/apk/debug/app-debug.apk
           make_latest: true
         env:

@@ -115,7 +115,7 @@ class RepoDB:
                 if u.get("email","").lower()==email.lower(): return None
             user = {"id":uid,"email":email.lower(),"username":username,
                     "password_hash":pw_hash,"token":token,"balance":1000.0,
-                    "levier":200,"mise":10.0,"tp":1.0,"sl":0.3,"interval":5,
+                    "levier":200,"mise":10.0,"tp":2.0,"sl":2.0,"interval":5,
                     "bot_actif":False,"is_admin":is_admin,
                     "meta_token":"","account_id":"","symbols":["BTC","ETH"]}
             self._data["users"][uid]=user
@@ -547,6 +547,10 @@ hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,
   <div class="sc"><div class="sn" id="wr">--%</div><div class="sl">WIN RATE</div></div>
   <div class="sc"><div class="sn" id="tps">+0€</div><div class="sl">PROFIT</div></div>
 </div><hr>
+<!-- POSITIONS EN COURS (toujours visible) -->
+<div class="tt" id="pos-title">⚡ POSITIONS EN COURS <span id="pos-count" style="color:rgba(255,255,255,.3);font-size:7px"></span></div>
+<div id="pos-live"><div class="np">📭 Aucune position — en attente de signal</div></div>
+<hr>
 
 <!-- ADMIN BOT CONTROL -->
 <div class="admin-only" id="admin-ctrl">
@@ -626,8 +630,8 @@ hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,
   <div class="sf"><label>MISE (€)</label><input type="number" id="cfg-m" value="10" min="1"></div>
 </div>
 <div class="g2b">
-  <div class="sf"><label>TAKE PROFIT %</label><input type="number" id="cfg-tp" value="1.0" step="0.1" min="0.1"></div>
-  <div class="sf"><label>STOP LOSS %</label><input type="number" id="cfg-sl" value="0.3" step="0.1" min="0.1"></div>
+  <div class="sf"><label>TAKE PROFIT %</label><input type="number" id="cfg-tp" value="2.0" step="0.1" min="0.5"></div>
+  <div class="sf"><label>STOP LOSS %</label><input type="number" id="cfg-sl" value="2.0" step="0.1" min="0.5"></div>
 </div>
 <button class="btn bst" onclick="saveSettings()" style="margin-bottom:12px">💾 SAUVEGARDER</button>
 <hr><div class="tt">🔗 VANTAGE LIVE (OPTIONNEL)</div>
@@ -701,18 +705,49 @@ async function rf(){
     const we=document.getElementById('wr');we.textContent=h.length?Math.round(w/h.length*100)+'%':'--%';we.className='sn '+(h.length&&w/h.length>=0.5?'gg':'rr');
     const te=document.getElementById('tps');te.textContent=ps(tp)+tp.toFixed(2)+'€';te.className='sn '+pc(tp);
     // Positions
-    const pos=d.positions||{};const ks=Object.keys(pos);const pE=document.getElementById('pos');
-    if(!ks.length){pE.innerHTML='<div class="np">📭 Aucune position — en attente de signal</div>';}
-    else{pE.innerHTML=ks.map(sym=>{
-      const p=pos[sym];const cpx=_prices[sym]||0;const e=parseFloat(p.e);
-      const pnl=p.d==='BUY'?parseFloat(p.v)*(cpx-e):parseFloat(p.v)*(e-cpx);
-      const pct=e?((p.d==='BUY'?(cpx-e)/e:(e-cpx)/e)*100):0;
-      const dir=p.d==='BUY'?'lg':'sh';const s2=SYMS[sym]||{};
-      return`<div class="po ${dir}"><div class="pt"><div class="py">${s2.icon||sym} ${sym}</div><div class="pd ${dir}">${p.d==='BUY'?'⬆ LONG':'⬇ SHORT'}</div></div>
-      <div class="pr"><span>Entrée <b style="color:#fff">$${ff(e)}</b></span><span>Actuel <b style="color:var(--g)">$${cpx?ff(cpx):'--'}</b></span></div>
-      <div class="pr" style="margin-top:3px"><span>Vol:${p.v}</span><span class="pp ${pc(pnl)}">${ps(pnl)}${Math.abs(pnl).toFixed(4)}€ (${ps(pct)}${Math.abs(pct).toFixed(2)}%)</span></div>
-      <div class="tsl"><span class="tpb">TP $${ff(parseFloat(p.tp))}</span><span class="slb">SL $${ff(parseFloat(p.sl))}</span></div></div>`;
-    }).join('');}
+    // Positions EN COURS
+    const pos=d.positions||{};const ks=Object.keys(pos);
+    const pLive=document.getElementById('pos-live');
+    const pCount=document.getElementById('pos-count');
+    if(pCount) pCount.textContent=ks.length>0?`(${ks.length} ouverte${ks.length>1?'s':''})` :'';
+    if(!ks.length){
+      pLive.innerHTML='<div class="np">📭 Aucune position — en attente de signal</div>';
+    } else {
+      pLive.innerHTML=ks.map(sym=>{
+        const p=pos[sym];const cpx=_prices[sym]||0;const e=parseFloat(p.e);
+        const pnl=p.d==='BUY'?parseFloat(p.v)*(cpx-e):parseFloat(p.v)*(e-cpx);
+        const pct=e?((p.d==='BUY'?(cpx-e)/e:(e-cpx)/e)*100):0;
+        const dir=p.d==='BUY'?'lg':'sh';const s2=SYMS[sym]||{};
+        const symLow=sym.toLowerCase();
+        // Barre de progression TP/SL
+        const tp=parseFloat(p.tp); const sl=parseFloat(p.sl);
+        const range=Math.abs(tp-sl);
+        const progress=range>0?Math.min(100,Math.max(0,Math.abs(cpx-sl)/range*100)):50;
+        return`<div class="po ${dir}">
+          <div class="pt">
+            <div class="py">${s2.icon||sym} ${sym}</div>
+            <div style="display:flex;gap:5px;align-items:center">
+              <div class="pd ${dir}">${p.d==='BUY'?'⬆ LONG':'⬇ SHORT'}</div>
+              <button onclick="cmd('close_${symLow}')" style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.35);color:#f87171;border-radius:6px;padding:2px 8px;font-family:'Orbitron',monospace;font-size:7px;cursor:pointer;letter-spacing:1px">✕ FERMER</button>
+            </div>
+          </div>
+          <div class="pr"><span>Entrée <b style="color:#fff">$${ff(e)}</b></span><span>Actuel <b style="color:var(--g)">$${cpx?ff(cpx):'--'}</b></span></div>
+          <div class="pr" style="margin-top:3px">
+            <span style="font-size:9px">Vol: ${p.v}</span>
+            <span class="pp ${pc(pnl)}">${ps(pnl)}${Math.abs(pnl).toFixed(4)}€ <span style="font-size:9px">(${ps(pct)}${Math.abs(pct).toFixed(2)}%)</span></span>
+          </div>
+          <div class="tsl" style="margin-top:4px">
+            <span class="slb">SL $${ff(sl)}</span>
+            <div style="flex:1;height:3px;background:rgba(255,255,255,.08);border-radius:2px;margin:0 4px;position:relative;top:5px">
+              <div style="height:100%;width:${progress}%;background:${pnl>=0?'#22c55e':'#ef4444'};border-radius:2px;transition:.5s"></div>
+            </div>
+            <span class="tpb">TP $${ff(tp)}</span>
+          </div>
+        </div>`;
+      }).join('');
+    }
+    // Compatibilité ancienne var pos (pour closeall)
+    const pE=pLive;
     document.getElementById('rfi').style.transition='none';document.getElementById('rfi').style.width='100%';
     setTimeout(()=>{document.getElementById('rfi').style.transition='width 3s linear';document.getElementById('rfi').style.width='0%';},50);
     if(cp===3)uh(h);
@@ -801,6 +836,30 @@ class H(BaseHTTPRequestHandler):
             pos=DB.get_positions(u["id"]);trades=DB.get_trades(u["id"])
             prices=get_all_prices()
             self.sj({"ok":True,"actif":bot_on,"balance":round(float(u["balance"]),2),"levier":u["levier"],"mise":u["mise"],"prices":prices,"positions":pos,"trades":trades})
+        elif p=="/api/admin/topup":
+            u=au(self.tok())
+            if not u or not u.get("is_admin"): self.sj({"ok":False,"error":"Admin requis"},403);return
+            target=body.get("target",""); amount=float(body.get("amount",0))
+            if not target or amount<=0: self.sj({"ok":False,"error":"Parametres invalides"});return
+            found=None
+            for uid2,usr in DB._data["users"].items():
+                if usr.get("username","").lower()==target.lower() or usr.get("email","").lower()==target.lower():
+                    found=(uid2,usr); break
+            if not found: self.sj({"ok":False,"error":f"Utilisateur '{target}' introuvable"});return
+            fuid,fusr=found
+            old_bal=float(fusr.get("balance",0))
+            DB.update_user(fuid,{"balance":round(old_bal+amount,2)})
+            self.sj({"ok":True,"username":fusr["username"],"old":old_bal,"new":round(old_bal+amount,2),"added":amount})
+        elif p=="/api/admin/reload":
+            u=au(self.tok())
+            if not u or not u.get("is_admin"): self.sj({"ok":False},403);return
+            DB.load(); self.sj({"ok":True,"msg":"DB rechargee depuis GitHub"})
+        elif p=="/api/admin/users":
+            u=au(self.tok())
+            if not u or not u.get("is_admin"): self.sj({"ok":False},403);return
+            users=[{"username":usr["username"],"email":usr["email"],"balance":usr["balance"]} 
+                   for usr in DB._data["users"].values()]
+            self.sj({"ok":True,"users":users})
         elif p=="/api/ohlc":
             u=au(self.tok())
             if not u: self.sj([],401);return
@@ -832,7 +891,7 @@ class H(BaseHTTPRequestHandler):
         elif p=="/api/settings":
             u=au(self.tok())
             if not u: self.sj({"ok":False},401);return
-            DB.update_user(u["id"],{"levier":int(body.get("levier",200)),"mise":float(body.get("mise",10)),"tp":float(body.get("tp",1.0)),"sl":float(body.get("sl",0.3))})
+            DB.update_user(u["id"],{"levier":int(body.get("levier",200)),"mise":float(body.get("mise",10)),"tp":float(body.get("tp",2.0)),"sl":float(body.get("sl",2.0))})
             self.sj({"ok":True,"msg":"✅ Paramètres sauvegardés dans le cloud"})
 
         elif p=="/api/apikeys":
