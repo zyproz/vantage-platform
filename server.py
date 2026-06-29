@@ -296,7 +296,7 @@ def trading_loop(uid):
                     else:
                         if price<=float(p["tp"]): r="✅ Take-Profit"
                         elif price>=float(p["sl"]): r="🛡️ Stop-Loss"
-                    # Pas de retournement - TP/SL seulement
+                    # Retournement désactivé - TP/SL uniquement
                     if r:
                         pnl=close_trade(uid,sym,price,r)
                         if pnl is not None:
@@ -961,168 +961,275 @@ setInterval(function(){if(cp===1||cp===2||cp===4)rf();},3000);
 setInterval(function(){if(cp===3)lc();},10000);
 </script></body></html>"""
 
-# ══════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════
 #   HTTP SERVER
-# ══════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════
 class H(BaseHTTPRequestHandler):
     def log_message(self,*a): pass
+
     def sj(self,d,c=200):
-        b=json.dumps(d).encode();self.send_response(c);self.send_header("Content-Type","application/json");self.send_header("Access-Control-Allow-Origin","*");self.end_headers();self.wfile.write(b)
+        b=json.dumps(d).encode()
+        self.send_response(c)
+        self.send_header("Content-Type","application/json")
+        self.send_header("Access-Control-Allow-Origin","*")
+        self.end_headers()
+        self.wfile.write(b)
+
     def sh(self,html):
-        b=html.encode();self.send_response(200);self.send_header("Content-Type","text/html;charset=utf-8");self.end_headers();self.wfile.write(b)
-    def tok(self): a=self.headers.get("Authorization","");return a[7:] if a.startswith("Bearer ") else None
-    def do_HEAD(self): self.send_response(200);self.send_header("Content-Type","text/plain");self.end_headers()
+        b=html.encode()
+        self.send_response(200)
+        self.send_header("Content-Type","text/html;charset=utf-8")
+        self.end_headers()
+        self.wfile.write(b)
+
+    def tok(self):
+        a=self.headers.get("Authorization","")
+        return a[7:] if a.startswith("Bearer ") else None
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-Type","text/plain")
+        self.end_headers()
+
     def do_OPTIONS(self):
-        self.send_response(200);self.send_header("Access-Control-Allow-Origin","*");self.send_header("Access-Control-Allow-Methods","GET,POST,OPTIONS");self.send_header("Access-Control-Allow-Headers","Content-Type,Authorization");self.end_headers()
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin","*")
+        self.send_header("Access-Control-Allow-Methods","GET,POST,OPTIONS")
+        self.send_header("Access-Control-Allow-Headers","Content-Type,Authorization")
+        self.end_headers()
+
     def do_GET(self):
-        p=self.path.split("?")[0]
-        if p in("/","/login"): self.sh(LOGIN_HTML)
-        elif p=="/dashboard": self.sh(DASH_HTML)
-        elif p in("/ping","/health"):
-            self.send_response(200);self.send_header("Content-Type","text/plain");self.end_headers();self.wfile.write(b"OK")
-        elif p=="/api/me":
-            u=au(self.tok())
-            if not u: self.sj({"ok":False},401);return
-            self.sj({"ok":True,"user":{"username":u["username"],"email":u["email"],"levier":u["levier"],"mise":u["mise"],"tp":u["tp"],"sl":u["sl"],"meta_token":u.get("meta_token",""),"account_id":u.get("account_id",""),"balance":u["balance"],"is_admin":bool(u.get("is_admin",False))}})
-        elif p=="/api/status":
-            u=au(self.tok())
-            if not u: self.sj({"ok":False},401);return
-            admin=DB.get_admin();bot_on=bool(admin and admin.get("bot_actif"))
-            pos=DB.get_positions(u["id"]);trades=DB.get_trades(u["id"])
-            prices=get_all_prices()
-            self.sj({"ok":True,"actif":bot_on,"balance":round(float(u["balance"]),2),"levier":u["levier"],"mise":u["mise"],"prices":prices,"positions":pos,"trades":trades})
-        elif p=="/api/admin/topup":
-            u=au(self.tok())
-            if not u or not u.get("is_admin"): self.sj({"ok":False},403);return
-            target=body.get("target",""); amount=float(body.get("amount",0))
-            if not target or amount<=0: self.sj({"ok":False,"error":"Params invalides"});return
-            found=None
-            for uid2,usr in DB._data["users"].items():
-                if usr.get("username","").lower()==target.lower() or usr.get("email","").lower()==target.lower():
-                    found=(uid2,usr); break
-            if not found: self.sj({"ok":False,"error":f"User '{target}' introuvable"});return
-            fuid,fusr=found
-            old_bal=float(fusr.get("balance",0))
-            DB.update_user(fuid,{"balance":round(old_bal+amount,2)})
-            self.sj({"ok":True,"username":fusr["username"],"old":old_bal,"new":round(old_bal+amount,2),"added":amount})
-        elif p=="/api/admin/reload":
-            u=au(self.tok())
-            if not u or not u.get("is_admin"): self.sj({"ok":False},403);return
-            DB.load(); self.sj({"ok":True,"msg":"DB rechargee"})
-        elif p=="/api/admin/users":
-            u=au(self.tok())
-            if not u or not u.get("is_admin"): self.sj({"ok":False},403);return
-            users=[{"username":usr["username"],"email":usr["email"],"balance":usr["balance"]}
-                   for usr in DB._data["users"].values()]
-            self.sj({"ok":True,"users":users})
-        elif p=="/api/ohlc":
-            u=au(self.tok())
-            if not u: self.sj([],401);return
-            qs=parse_qs(urlparse(self.path).query)
-            self.sj(get_ohlc(qs.get("s",["BTC"])[0],qs.get("tf",["5m"])[0]))
-        else: self.send_response(404);self.end_headers()
+        try:
+            p=self.path.split("?")[0]
+            if p in("/","/login"): self.sh(LOGIN_HTML)
+            elif p=="/dashboard": self.sh(DASH_HTML)
+            elif p in("/ping","/health"):
+                self.send_response(200)
+                self.send_header("Content-Type","text/plain")
+                self.end_headers()
+                self.wfile.write(b"OK")
+            elif p=="/api/me":
+                u=au(self.tok())
+                if not u: self.sj({"ok":False},401);return
+                self.sj({"ok":True,"user":{
+                    "username":u["username"],"email":u["email"],
+                    "levier":u["levier"],"mise":u["mise"],
+                    "tp":u["tp"],"sl":u["sl"],
+                    "meta_token":u.get("meta_token",""),
+                    "account_id":u.get("account_id",""),
+                    "balance":u["balance"],
+                    "is_admin":bool(u.get("is_admin",False))
+                }})
+            elif p=="/api/status":
+                u=au(self.tok())
+                if not u: self.sj({"ok":False},401);return
+                admin=DB.get_admin()
+                bot_on=bool(admin and admin.get("bot_actif"))
+                pos=DB.get_positions(u["id"])
+                trades=DB.get_trades(u["id"])
+                prices=get_all_prices()
+                self.sj({
+                    "ok":True,"actif":bot_on,
+                    "balance":round(float(u["balance"]),2),
+                    "levier":u["levier"],"mise":u["mise"],
+                    "prices":prices,"positions":pos,"trades":trades
+                })
+            elif p=="/api/ohlc":
+                u=au(self.tok())
+                if not u: self.sj([],401);return
+                from urllib.parse import parse_qs, urlparse
+                qs=parse_qs(urlparse(self.path).query)
+                sym=qs.get("s",["BTC"])[0]
+                tf=qs.get("tf",["5m"])[0]
+                self.sj(get_ohlc(sym,tf))
+            else:
+                self.send_response(404)
+                self.end_headers()
+        except Exception as e:
+            try: self.sj({"ok":False,"error":str(e)},500)
+            except: pass
 
     def do_POST(self):
-        n=int(self.headers.get("Content-Length",0))
-        body=json.loads(self.rfile.read(n)) if n else {}
-        p=self.path
+        try:
+            n=int(self.headers.get("Content-Length",0))
+            body=json.loads(self.rfile.read(n)) if n else {}
+            p=self.path
 
-        if p=="/api/register":
-            email=body.get("email","").lower().strip();username=body.get("username","").strip();pw=body.get("password","")
-            if not email or not username or len(pw)<6: self.sj({"ok":False,"error":"Données invalides"});return
-            is_admin=bool(ADMIN_EMAIL and email==ADMIN_EMAIL)
-            u=DB.create_user(email,username,hp(pw),gt(),is_admin)
-            if u: self.sj({"ok":True,"token":u["token"],"is_admin":bool(u.get("is_admin",False))})
-            else: self.sj({"ok":False,"error":"Email déjà utilisé"})
+            if p=="/api/register":
+                email=body.get("email","").lower().strip()
+                username=body.get("username","").strip()
+                pw=body.get("password","")
+                if not email or not username or len(pw)<6:
+                    self.sj({"ok":False,"error":"Données invalides"});return
+                is_admin=bool(ADMIN_EMAIL and email==ADMIN_EMAIL)
+                u=DB.create_user(email,username,hp(pw),gen_tok(),is_admin)
+                if u: self.sj({"ok":True,"token":u["token"],"is_admin":bool(u.get("is_admin",False))})
+                else: self.sj({"ok":False,"error":"Email déjà utilisé"})
 
-        elif p=="/api/login":
-            email=body.get("email","").lower().strip();pw=body.get("password","")
-            u=DB.get_by_email(email)
-            if u and u["password_hash"]==hp(pw):
-                tok=gt();DB.update_token(email,tok)
-                self.sj({"ok":True,"token":tok,"is_admin":bool(u.get("is_admin",False))})
-            else: self.sj({"ok":False,"error":"Email ou mot de passe incorrect"})
+            elif p=="/api/login":
+                email=body.get("email","").lower().strip()
+                pw=body.get("password","")
+                u=DB.get_by_email(email)
+                if u and u["password_hash"]==hp(pw):
+                    tok=gen_tok()
+                    DB.update_token(email,tok)
+                    self.sj({"ok":True,"token":tok,"is_admin":bool(u.get("is_admin",False))})
+                else:
+                    self.sj({"ok":False,"error":"Email ou mot de passe incorrect"})
 
-        elif p=="/api/settings":
-            u=au(self.tok())
-            if not u: self.sj({"ok":False},401);return
-            DB.update_user(u["id"],{"levier":int(body.get("levier",200)),"mise":float(body.get("mise",10)),"tp":float(body.get("tp",1.0)),"sl":float(body.get("sl",0.3))})
-            self.sj({"ok":True,"msg":"✅ Paramètres sauvegardés dans le cloud"})
+            elif p=="/api/settings":
+                u=au(self.tok())
+                if not u: self.sj({"ok":False},401);return
+                DB.update_user(u["id"],{
+                    "levier":int(body.get("levier",200)),
+                    "mise":float(body.get("mise",10)),
+                    "tp":float(body.get("tp",2.0)),
+                    "sl":float(body.get("sl",2.0))
+                })
+                self.sj({"ok":True,"msg":"✅ Paramètres sauvegardés"})
 
-        elif p=="/api/apikeys":
-            u=au(self.tok())
-            if not u: self.sj({"ok":False},401);return
-            DB.update_user(u["id"],{"meta_token":body.get("meta_token",""),"account_id":body.get("account_id","")})
-            self.sj({"ok":True,"msg":"✅ Clés API sauvegardées"})
+            elif p=="/api/apikeys":
+                u=au(self.tok())
+                if not u: self.sj({"ok":False},401);return
+                DB.update_user(u["id"],{
+                    "meta_token":body.get("meta_token",""),
+                    "account_id":body.get("account_id","")
+                })
+                self.sj({"ok":True,"msg":"✅ Clés API sauvegardées"})
 
-        elif p=="/api/cmd":
-            u=au(self.tok())
-            if not u: self.sj({"ok":False,"redirect":"/"},401);return
-            c=body.get("cmd","");uid=u["id"];ok=True;msg=""
+            elif p=="/api/admin/topup":
+                u=au(self.tok())
+                if not u or not u.get("is_admin"): self.sj({"ok":False},403);return
+                target=body.get("target","")
+                amount=float(body.get("amount",0))
+                found=None
+                for uid2,usr in DB._data["users"].items():
+                    if usr.get("username","").lower()==target.lower() or usr.get("email","").lower()==target.lower():
+                        found=(uid2,usr);break
+                if not found: self.sj({"ok":False,"error":f"User '{target}' introuvable"});return
+                fuid,fusr=found
+                old_bal=float(fusr.get("balance",0))
+                DB.update_user(fuid,{"balance":round(old_bal+amount,2)})
+                self.sj({"ok":True,"username":fusr["username"],"old":old_bal,"new":round(old_bal+amount,2),"added":amount})
 
-            if c in("start","stop"):
-                if not u.get("is_admin"): self.sj({"ok":False,"msg":"❌ Admin uniquement"});return
-                actif=(c=="start")
-                DB.update_user(uid,{"bot_actif":actif})
-                if actif: ensure_thread(uid);msg="🟢 Bot démarré !";tg(f"🚀 *ZyCrypto Bot démarré* par {u['username']}")
-                else: msg="⏹ Bot arrêté"
+            elif p=="/api/admin/reload":
+                u=au(self.tok())
+                if not u or not u.get("is_admin"): self.sj({"ok":False},403);return
+                DB.load()
+                self.sj({"ok":True,"msg":"DB rechargée"})
 
-            elif c=="closeall":
-                pos=DB.get_positions(uid);tot=0
-                if pos:
-                    for sk in list(pos.keys()):
-                        pnl=close_trade(uid,sk,get_price(sk) or float(pos[sk]["e"]),"🔒 Fermer tout")
-                        if pnl is not None: tot+=pnl
-                    u2=DB.get_by_id(uid)
-                    msg=f"🔒 Tout fermé | {tot:+.4f}€ | Solde: {u2['balance']:.2f}€"
-                else: ok=False;msg="Rien à fermer"
+            elif p=="/api/cmd":
+                u=au(self.tok())
+                if not u: self.sj({"ok":False,"redirect":"/"},401);return
+                c=body.get("cmd","")
+                uid=u["id"]
+                ok=True
+                msg=""
+
+                if c in("start","stop"):
+                    if not u.get("is_admin"): self.sj({"ok":False,"msg":"❌ Admin uniquement"});return
+                    actif=(c=="start")
+                    DB.update_user(uid,{"bot_actif":actif})
+                    if actif:
+                        ensure_thread(uid)
+                        msg="🟢 Bot démarré !"
+                        tg(f"🚀 *ZyCrypto Bot démarré* par {u['username']}")
+                    else:
+                        msg="⏹ Bot arrêté"
+
+                elif c=="closeall":
+                    pos=DB.get_positions(uid)
+                    tot=0
+                    if pos:
+                        for sk in list(pos.keys()):
+                            price_k=get_price(sk)
+                            if not price_k: price_k=float(pos[sk]["e"])
+                            pnl=close_trade(uid,sk,price_k,"🔒 Fermer tout")
+                            if pnl is not None: tot+=pnl
+                        u2=DB.get_by_id(uid)
+                        msg=f"🔒 Tout fermé | {tot:+.4f}€ | Solde: {u2['balance']:.2f}€"
+                    else:
+                        ok=False
+                        msg="Aucune position à fermer"
+
+                else:
+                    # Détecter le symbole
+                    sym=None
+                    for s in SYMBOLS:
+                        if s.lower() in c:
+                            sym=s; break
+
+                    if not sym:
+                        self.sj({"ok":False,"msg":f"❌ Commande inconnue: {c}"})
+                        return
+
+                    if "buy" in c or "long" in c:
+                        price=get_price(sym)
+                        if price and price>0:
+                            t=open_trade(uid,sym,"BUY",price)
+                            if t:
+                                info=SYMBOLS[sym]
+                                msg=f"🟢 LONG {info['icon']} {sym} @ ${price:.2f}"
+                                tg(f"⚡ *{msg}* ({u['username']})")
+                            else:
+                                ok=False
+                                msg="❌ Solde insuffisant"
+                        else:
+                            ok=False
+                            msg="❌ Prix indisponible"
+
+                    elif "sell" in c or "short" in c:
+                        price=get_price(sym)
+                        if price and price>0:
+                            t=open_trade(uid,sym,"SELL",price)
+                            if t:
+                                info=SYMBOLS[sym]
+                                msg=f"🔴 SHORT {info['icon']} {sym} @ ${price:.2f}"
+                                tg(f"⚡ *{msg}* ({u['username']})")
+                            else:
+                                ok=False
+                                msg="❌ Solde insuffisant"
+                        else:
+                            ok=False
+                            msg="❌ Prix indisponible"
+
+                    elif "close" in c:
+                        price=get_price(sym)
+                        if not price: price=0
+                        pnl=close_trade(uid,sym,price,"🔒 Fermeture manuelle")
+                        if pnl is not None:
+                            u2=DB.get_by_id(uid)
+                            msg=f"🔒 {sym} fermé | {pnl:+.4f}€ | Solde: {u2['balance']:.2f}€"
+                        else:
+                            ok=False
+                            msg=f"Pas de position {sym} ouverte"
+
+                    else:
+                        ok=False
+                        msg=f"❌ Action inconnue: {c}"
+
+                self.sj({"ok":ok,"msg":msg})
+
             else:
-                sym=None
-                for s in SYMBOLS:
-                    if s.lower() in c: sym=s; break
-                if not sym: self.sj({"ok":False,"msg":"❌ Commande inconnue"}); return
+                self.send_response(404)
+                self.end_headers()
 
-                if "buy" in c or "long" in c:
-                    price=get_price(sym)
-                    if price:
-                        t=open_trade(uid,sym,"BUY",price)
-                        if t: msg=f"🟢 LONG {SYMBOLS[sym]['icon']} {sym} @ ${price:.4f}";tg(f"⚡ *{msg}* ({u['username']})")
-                        else: ok=False;msg="❌ Solde insuffisant"
-                    else: ok=False;msg="❌ Prix indisponible"
+        except Exception as e:
+            try: self.sj({"ok":False,"error":f"Erreur serveur: {str(e)}"},500)
+            except: pass
 
-                elif "sell" in c or "short" in c:
-                    price=get_price(sym)
-                    if price:
-                        t=open_trade(uid,sym,"SELL",price)
-                        if t: msg=f"🔴 SHORT {SYMBOLS[sym]['icon']} {sym} @ ${price:.4f}";tg(f"⚡ *{msg}* ({u['username']})")
-                        else: ok=False;msg="❌ Solde insuffisant"
-                    else: ok=False;msg="❌ Prix indisponible"
-
-                elif "close" in c and "all" not in c:
-                    price=get_price(sym)
-                    pnl=close_trade(uid,sym,price,"🔒 Fermeture manuelle")
-                    if pnl is not None:
-                        u2=DB.get_by_id(uid);msg=f"🔒 {sym} fermé | {pnl:+.4f}€ | Solde: {u2['balance']:.2f}€"
-                    else: ok=False;msg=f"Pas de position {sym}"
-
-                elif "closeall" in c:
-                    pos=DB.get_positions(uid);tot=0
-                    for sk in list(pos.keys()):
-                        pnl=close_trade(uid,sk,get_price(sk) or float(pos[sk]["e"]),"🔒 Fermer tout")
-                        if pnl: tot+=pnl
-                    if pos: msg=f"🔒 Tout fermé | {tot:+.4f}€"
-                    else: ok=False;msg="Rien à fermer"
-
-            self.sj({"ok":ok,"msg":msg})
-        else: self.send_response(404);self.end_headers()
 
 def run():
     import socket as sk
     class S(HTTPServer):
         allow_reuse_address=True
-        def server_bind(self): self.socket.setsockopt(sk.SOL_SOCKET,sk.SO_REUSEADDR,1);super().server_bind()
-    print(f"⚡ ZYCRYPTO PLATFORM v1.2")
-    print(f"   DB: GitHub Gist ({'✅' if GH_TOKEN and GIST_ID else '⚠️  manque GH_TOKEN/GIST_ID'})")
+        def server_bind(self):
+            self.socket.setsockopt(sk.SOL_SOCKET,sk.SO_REUSEADDR,1)
+            super().server_bind()
+
+    print(f"⚡ ZYCRYPTO PLATFORM v1.3")
+    print(f"   DB: GitHub Repo ({DB.db_repo})")
     print(f"   Admin: {ADMIN_EMAIL}")
     print(f"   Symboles: {', '.join(SYMBOLS.keys())}")
     print(f"   Port: {PORT}")
