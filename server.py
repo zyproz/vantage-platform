@@ -91,9 +91,10 @@ def init_db():
         created_at TEXT DEFAULT (datetime('now'))
     );
     """)
-    # Migration : ajouter tpsl_active si absent (base existante v1.3)
-    try: db.execute("ALTER TABLE positions ADD COLUMN tpsl_active INTEGER DEFAULT 1"); db.commit()
-    except: pass
+    # Migration: colonnes v1.4
+    for col in ["ALTER TABLE positions ADD COLUMN tpsl_active INTEGER DEFAULT 1"]:
+        try: db.execute(col); db.commit()
+        except: pass
     db.commit(); db.close()
 
 # ── Auth ──────────────────────────────────────────────────────
@@ -169,19 +170,19 @@ def get_all_users():
 
 # ── Positions ─────────────────────────────────────────────────
 def get_positions(user_id):
-    """Clé = pos_id — plusieurs positions par symbole autorisées."""
+    """Retourne une liste de positions (plusieurs par crypto autorisées)."""
     db = get_db()
-    rows = db.execute("SELECT * FROM positions WHERE user_id=?", (user_id,)).fetchall()
+    rows = db.execute("SELECT * FROM positions WHERE user_id=? ORDER BY opened_at ASC", (user_id,)).fetchall()
     db.close()
-    result = {}
+    result = []
     for r in rows:
-        keys = r.keys()
-        result[r["id"]] = {
-            "sym":r["symbol"],"d":r["direction"],"e":r["entry"],"v":r["volume"],
+        keys = [d[0] for d in r.description] if hasattr(r,'description') else list(r.keys())
+        result.append({
+            "id":r["id"],"sym":r["symbol"],"d":r["direction"],"e":r["entry"],"v":r["volume"],
             "tp":r["tp"],"sl":r["sl"],"m":r["marge"],
             "tpsl":r["tpsl_active"] if "tpsl_active" in keys else 1,
             "ts":r["opened_at"]
-        }
+        })
     return result
 
 def get_pos_by_id(pos_id):
@@ -196,13 +197,11 @@ def toggle_tpsl(pos_id):
     db.commit()
     r = db.execute("SELECT tpsl_active FROM positions WHERE id=?", (pos_id,)).fetchone()
     db.close()
-    return r[0] if r else 1
+    return int(r[0]) if r else 1
 
 def get_triggers(user_id):
     try:
-        db = get_db()
-        rows = db.execute("SELECT * FROM triggers WHERE user_id=? AND active=1 ORDER BY created_at DESC", (user_id,)).fetchall()
-        db.close()
+        db = get_db(); rows = db.execute("SELECT * FROM triggers WHERE user_id=? AND active=1 ORDER BY created_at DESC",(user_id,)).fetchall(); db.close()
         return [dict(r) for r in rows]
     except: return []
 
@@ -210,21 +209,18 @@ def save_trigger(user_id, symbol, direction, target, condition):
     tid = secrets.token_hex(8)
     try:
         db = get_db()
-        db.execute("INSERT INTO triggers (id,user_id,symbol,direction,target_price,condition) VALUES (?,?,?,?,?,?)",
-                   (tid, user_id, symbol, direction, float(target), condition))
+        db.execute("INSERT INTO triggers (id,user_id,symbol,direction,target_price,condition) VALUES (?,?,?,?,?,?)",(tid,user_id,symbol,direction,float(target),condition))
         db.commit(); db.close()
     except: pass
     return tid
 
-def delete_trigger(trigger_id):
+def delete_trigger(tid):
     try:
-        db = get_db()
-        db.execute("UPDATE triggers SET active=0 WHERE id=?", (trigger_id,))
-        db.commit(); db.close()
+        db = get_db(); db.execute("UPDATE triggers SET active=0 WHERE id=?",(tid,)); db.commit(); db.close()
     except: pass
 
 def save_position(user_id, symbol, direction, entry, volume, tp, sl, marge):
-    """Crée une nouvelle position (plusieurs sur même symbole autorisées)."""
+    """Plusieurs positions par crypto — plus de DELETE."""
     pid = secrets.token_hex(12)
     db = get_db()
     db.execute("""INSERT INTO positions (id,user_id,symbol,direction,entry,volume,tp,sl,marge,tpsl_active)
@@ -234,8 +230,14 @@ def save_position(user_id, symbol, direction, entry, volume, tp, sl, marge):
     return pid
 
 def delete_position(user_id, symbol):
+    """Ferme TOUTES les positions sur ce symbole."""
     db = get_db()
     db.execute("DELETE FROM positions WHERE user_id=? AND symbol=?", (user_id, symbol))
+    db.commit(); db.close()
+
+def delete_position_by_id(pos_id):
+    db = get_db()
+    db.execute("DELETE FROM positions WHERE id=?", (pos_id,))
     db.commit(); db.close()
 
 # ── Trades ────────────────────────────────────────────────────
@@ -520,7 +522,7 @@ def open_trade(user_id, sym, direction, price):
     return {"v":vol,"tp":tp,"sl":sl,"m":mise}
 
 def close_trade_by_id(pos_id, cp, reason):
-    """Ferme une position spécifique par son ID."""
+    """Ferme une position par son ID."""
     p = get_pos_by_id(pos_id)
     if not p: return None
     sym = p["symbol"]; user_id = p["user_id"]
@@ -529,17 +531,15 @@ def close_trade_by_id(pos_id, cp, reason):
     db.execute("UPDATE users SET balance=balance+? WHERE id=?", (float(p["marge"])+pnl, user_id))
     db.commit(); db.close()
     save_trade(user_id, sym, p["direction"], float(p["entry"]), float(cp), float(p["volume"]), pnl, reason)
-    db2 = get_db()
-    db2.execute("DELETE FROM positions WHERE id=?", (pos_id,))
-    db2.commit(); db2.close()
+    delete_position_by_id(pos_id)
     return pnl
 
 def close_trade(user_id, sym, cp, reason):
-    """Ferme la PREMIÈRE position sur ce symbole (compat)."""
+    """Ferme la première position sur ce symbole (compat)."""
     pos = get_positions(user_id)
-    for pid, p in pos.items():
+    for p in pos:
         if p["sym"] == sym:
-            return close_trade_by_id(pid, cp, reason)
+            return close_trade_by_id(p["id"], cp, reason)
     return None
 
 def trading_loop(user_id):
@@ -552,7 +552,8 @@ def trading_loop(user_id):
             if not cfg or not cfg.get("bot_actif"): break
             try:
                 sn, price, rv = get_signal(sym)
-                pos = get_positions(user_id); en = sym in pos
+                pos = get_positions(user_id)
+                en = any(p["sym"]==sym for p in pos)
                 if en:
                     p = pos[sym]; d = p["d"]; r = None
                     if d=="BUY":
@@ -596,62 +597,57 @@ def trading_loop(user_id):
         time.sleep(interval)
 
 def tpsl_monitor():
-    """Surveille TP/SL pour TOUS les utilisateurs, indépendamment du bot."""
+    """TP/SL automatique — actif en permanence pour toutes les positions."""
     while True:
         try:
             db = get_db()
-            rows = db.execute("SELECT DISTINCT user_id FROM positions").fetchall()
-            db.close()
-            for row in rows:
-                uid = row["user_id"]
-                pos = get_positions(uid)
-                for sym, p in pos.items():
-                    try:
-                        price = get_price(sym)
-                        if not price or price <= 0: continue
-                        d = p["d"]; tp = float(p["tp"]); sl = float(p["sl"])
-                        reason = None
-                        if d == "BUY":
-                            if price >= tp: reason = "✅ Take-Profit"
-                            elif price <= sl: reason = "🛡️ Stop-Loss"
-                        else:
-                            if price <= tp: reason = "✅ Take-Profit"
-                            elif price >= sl: reason = "🛡️ Stop-Loss"
-                        if reason:
-                            pnl = close_trade(uid, sym, price, reason)
-                            if pnl is not None:
-                                info = SYMBOLS.get(sym, {})
-                                u2 = get_user_by_id(uid)
-                                tg(f"{'💰' if pnl>=0 else '💸'} *{info.get('icon',sym)} {sym}* — {reason}\n"
-                                   f"`{float(p['e']):.4f}` → `{price:.4f}`\n"
-                                   f"Profit:`{pnl:+.4f}€` Solde:`{u2['balance']:.2f}€`")
-                    except: pass
-        except: pass
-        time.sleep(5)
-
-
-def trigger_monitor():
-    """Ordres à prix cible — exécute automatiquement."""
-    while True:
-        try:
-            db=get_db()
-            rows=db.execute("SELECT * FROM triggers WHERE active=1").fetchall()
+            rows = db.execute("SELECT * FROM positions").fetchall()
             db.close()
             for row in rows:
                 try:
-                    t=dict(row); price=get_price(t["symbol"])
+                    p = dict(row)
+                    if p.get("tpsl_active", 1) == 0: continue
+                    sym = p["symbol"]; price = get_price(sym)
+                    if not price or price <= 0: continue
+                    d = p["direction"]; tp = float(p["tp"]); sl = float(p["sl"]); reason = None
+                    if d=="BUY":
+                        if price>=tp: reason="✅ Take-Profit"
+                        elif price<=sl: reason="🛡️ Stop-Loss"
+                    else:
+                        if price<=tp: reason="✅ Take-Profit"
+                        elif price>=sl: reason="🛡️ Stop-Loss"
+                    if reason:
+                        pnl = close_trade_by_id(p["id"], price, reason)
+                        if pnl is not None:
+                            info = SYMBOLS.get(sym,{}); u2 = get_user_by_id(p["user_id"])
+                            bal = u2["balance"] if u2 else 0
+                            tg(f"{'💰' if pnl>=0 else '💸'} *{info.get('icon',sym)} {sym}* — {reason}\n"
+                               f"`{float(p['entry']):.4f}` → `{price:.4f}`\n"
+                               f"Profit:`{pnl:+.4f}€` Solde:`{bal:.2f}€`")
+                except: pass
+        except: pass
+        time.sleep(5)
+
+def trigger_monitor():
+    """Ordres à prix cible — exécution automatique."""
+    while True:
+        try:
+            db = get_db()
+            rows = db.execute("SELECT * FROM triggers WHERE active=1").fetchall()
+            db.close()
+            for row in rows:
+                try:
+                    t = dict(row); price = get_price(t["symbol"])
                     if not price or price<=0: continue
-                    fired=False
-                    if t["condition"]=="below" and price<=t["target_price"]: fired=True
-                    elif t["condition"]=="above" and price>=t["target_price"]: fired=True
+                    fired = (t["condition"]=="below" and price<=t["target_price"]) or                             (t["condition"]=="above" and price>=t["target_price"])
                     if fired:
                         delete_trigger(t["id"])
-                        result=open_trade(t["user_id"],t["symbol"],t["direction"],price)
+                        result = open_trade(t["user_id"],t["symbol"],t["direction"],price)
                         if result:
-                            info=SYMBOLS.get(t["symbol"],{})
-                            tg(f"🎯 *Ordre déclenché!* {info.get('icon',t['symbol'])} {t['symbol']}"
+                            info = SYMBOLS.get(t["symbol"],{})
+                            tg(f"🎯 *Ordre déclenché !* {info.get('icon',t['symbol'])} {t['symbol']}"
                                f" {'🟢 LONG' if t['direction']=='BUY' else '🔴 SHORT'}"
-                               f" @ `{price:.4f}$` (cible `{t['target_price']:.4f}$`)")
+                               f" @ `{price:.4f}$` (cible: `{t['target_price']:.4f}$`)")
                 except: pass
         except: pass
         time.sleep(3)
@@ -945,14 +941,14 @@ hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,
 <!-- PAGE 6: ORDRES LIMITES -->
 <div id="p6" class="pg">
 <div class="logo" style="font-size:15px;padding:10px 0 3px">🎯 ORDRES LIMITES</div>
-<div class="sub">EXÉCUTION AUTOMATIQUE AU PRIX CIBLE</div>
+<div class="sub">EXÉCUTION AUTO AU PRIX CIBLE</div>
 <hr>
-<div class="tt">➕ NOUVEL ORDRE</div>
+<div class="tt">➕ CRÉER UN ORDRE</div>
 <div style="background:rgba(245,197,24,.04);border:1px solid rgba(245,197,24,.1);border-radius:12px;padding:12px;margin-bottom:10px">
   <div class="g2b" style="margin-bottom:8px">
     <div>
-      <div style="font-size:8px;color:rgba(245,197,24,.4);font-family:Orbitron,monospace;letter-spacing:1px;margin-bottom:4px">CRYPTO</div>
-      <select id="tr-sym" style="width:100%;background:rgba(245,197,24,.04);border:1px solid rgba(245,197,24,.1);border-radius:8px;padding:9px;color:#fff;font-family:Rajdhani,sans-serif;font-size:13px;outline:none">
+      <div style="font-size:8px;color:rgba(245,197,24,.4);font-family:Orbitron,monospace;margin-bottom:4px">CRYPTO</div>
+      <select id="tr-sym" style="width:100%;background:rgba(245,197,24,.04);border:1px solid rgba(245,197,24,.12);border-radius:8px;padding:9px;color:#fff;font-family:Rajdhani,sans-serif;font-size:13px;outline:none">
         <option value="BTC">₿ Bitcoin</option><option value="ETH">Ξ Ethereum</option>
         <option value="BNB">◈ BNB</option><option value="SOL">◎ Solana</option>
         <option value="XRP">✕ XRP</option><option value="DOGE">Ð Dogecoin</option>
@@ -960,32 +956,30 @@ hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,
       </select>
     </div>
     <div>
-      <div style="font-size:8px;color:rgba(245,197,24,.4);font-family:Orbitron,monospace;letter-spacing:1px;margin-bottom:4px">ACTION</div>
+      <div style="font-size:8px;color:rgba(245,197,24,.4);font-family:Orbitron,monospace;margin-bottom:4px">ACTION</div>
       <select id="tr-dir" style="width:100%;background:rgba(34,197,94,.05);border:1px solid rgba(34,197,94,.2);border-radius:8px;padding:9px;color:#4ade80;font-family:Rajdhani,sans-serif;font-size:13px;font-weight:700;outline:none">
-        <option value="BUY">🟢 LONG</option>
-        <option value="SELL">🔴 SHORT</option>
+        <option value="BUY">🟢 LONG</option><option value="SELL">🔴 SHORT</option>
       </select>
     </div>
   </div>
   <div style="margin-bottom:8px">
-    <div style="font-size:8px;color:rgba(245,197,24,.4);font-family:Orbitron,monospace;letter-spacing:1px;margin-bottom:4px">PRIX CIBLE ($)</div>
-    <input type="number" id="tr-price" placeholder="ex: 59200" step="0.01"
-      style="width:100%;background:rgba(245,197,24,.04);border:1px solid rgba(245,197,24,.2);border-radius:8px;padding:10px 12px;color:#fff;font-family:Rajdhani,sans-serif;font-size:15px;outline:none">
+    <div style="font-size:8px;color:rgba(245,197,24,.4);font-family:Orbitron,monospace;margin-bottom:4px">PRIX CIBLE ($)</div>
+    <input type="number" id="tr-price" placeholder="ex: 59200" step="0.01" style="width:100%;background:rgba(245,197,24,.04);border:1px solid rgba(245,197,24,.2);border-radius:8px;padding:10px 12px;color:#fff;font-family:Rajdhani,sans-serif;font-size:15px;outline:none">
   </div>
-  <div id="tr-explain" style="text-align:center;font-size:9px;color:rgba(255,255,255,.25);font-family:Orbitron,monospace;margin-bottom:8px">₿ Ouvre LONG quand BTC descend au prix cible</div>
-  <button onclick="addTrigger()" class="btn bst">🎯 CRÉER L'ORDRE LIMITE</button>
+  <div id="tr-info" style="text-align:center;font-size:9px;color:rgba(255,255,255,.25);font-family:Orbitron,monospace;margin-bottom:8px;letter-spacing:1px">₿ LONG quand BTC descend au prix cible</div>
+  <button onclick="addTrigger()" class="btn bst">🎯 CRÉER L'ORDRE</button>
 </div>
-<div class="tt">📋 ORDRES ACTIFS <span id="tr-count"></span></div>
+<div class="tt">📋 ORDRES ACTIFS <span id="tr-count" style="color:rgba(255,255,255,.3);font-size:8px"></span></div>
 <div id="tr-list"><div class="np">Aucun ordre actif</div></div>
 </div>
 
 <nav class="bnav">
-  <button class="bnt a" id="bn1" onclick="sp(1)" style="font-size:16px">📊<span>TRADE</span></button>
-  <button class="bnt" id="bn2" onclick="sp(2)" style="font-size:16px">💼<span id="bn2l">EN COURS</span></button>
-  <button class="bnt" id="bn3" onclick="sp(3)" style="font-size:16px">📈<span>GRAPH</span></button>
-  <button class="bnt" id="bn4" onclick="sp(4)" style="font-size:16px">📋<span>HIST.</span></button>
-  <button class="bnt" id="bn5" onclick="sp(5)" style="font-size:16px">⚙️<span>COMPTE</span></button>
-  <button class="bnt" id="bn6" onclick="sp(6)" style="font-size:16px">🎯<span id="bn6l">ORDRES</span></button>
+  <button class="bnt a" id="bn1" onclick="sp(1)" style="font-size:15px">📊<span>TRADE</span></button>
+  <button class="bnt" id="bn2" onclick="sp(2)" style="font-size:15px">💼<span id="bn2l">EN COURS</span></button>
+  <button class="bnt" id="bn3" onclick="sp(3)" style="font-size:15px">📈<span>GRAPH</span></button>
+  <button class="bnt" id="bn4" onclick="sp(4)" style="font-size:15px">📋<span>HIST.</span></button>
+  <button class="bnt" id="bn5" onclick="sp(5)" style="font-size:15px">⚙️<span>COMPTE</span></button>
+  <button class="bnt" id="bn6" onclick="sp(6)" style="font-size:15px">🎯<span id="bn6l">ORDRES</span></button>
 </nav>
 
 <script>
@@ -1058,7 +1052,7 @@ function rf(){
     .then(function(r){if(r.status===401){window.location.replace('/');return null;}return r.json();})
     .then(function(d){
       if(!d||!d.ok)return;
-      _prices=d.prices||{}; _positions=d.positions||{};
+      _prices=d.prices||{}; _positions=d.positions||[];
       // Status
       var on=d.actif||false;
       document.getElementById('d1').className='dot '+(on?'on':'off');
@@ -1088,7 +1082,7 @@ function rf(){
       te.textContent=ps(tot)+tot.toFixed(2)+'€';
       te.className='sn '+pc(tot);
       // Badge
-      var nc=Object.keys(_positions).length;
+      var nc=(_positions||[]).length;
       var bl=document.getElementById('bn2l');
       if(bl) bl.innerHTML='EN COURS'+(nc>0?'<span class="badge">'+nc+'</span>':'');
       // Positions
@@ -1107,8 +1101,8 @@ function rf(){
 function renderPos(){
   var c=document.getElementById('pos-container');
   if(!c)return;
-  var entries=Object.entries(_positions);
-  var nc=entries.length;
+  var pos=_positions||[];
+  var nc=pos.length;
   var bl=document.getElementById('bn2l');
   if(bl) bl.innerHTML='EN COURS'+(nc>0?'<span class="badge">'+nc+'</span>':'');
   if(!nc){
@@ -1116,12 +1110,11 @@ function renderPos(){
     return;
   }
   var h='';
-  entries.forEach(function(kv){
-    var pid=kv[0]; var p=kv[1];
-    var sym=p.sym||'?';
+  pos.forEach(function(p){
+    var sym=p.sym; var pid=p.id;
     var cpx=_prices[sym]||0;
-    var e=parseFloat(p.e)||0,v=parseFloat(p.v)||0;
-    var tp=parseFloat(p.tp)||0,sl=parseFloat(p.sl)||0;
+    var e=parseFloat(p.e)||0, v=parseFloat(p.v)||0;
+    var tp=parseFloat(p.tp)||0, sl=parseFloat(p.sl)||0;
     var tpslOn=(p.tpsl===undefined||p.tpsl===1||p.tpsl===true);
     var pnl=p.d==='BUY'?v*(cpx-e):v*(e-cpx);
     var pct=e?((p.d==='BUY'?(cpx-e)/e:(e-cpx)/e)*100):0;
@@ -1139,21 +1132,19 @@ function renderPos(){
     if(tpslOn){
       h+='<div class="po-bar"><div style="height:100%;width:'+prog+'%;background:'+clr+';border-radius:2px;transition:.5s"></div></div>';
     }else{
-      h+='<div style="text-align:center;font-size:8px;color:rgba(255,150,0,.7);padding:4px 0;font-family:Orbitron,monospace">⏸ TP/SL désactivé</div>';
+      h+='<div style="text-align:center;font-size:8px;color:rgba(255,150,0,.7);padding:4px 0;font-family:Orbitron,monospace;letter-spacing:1px">⏸ TP/SL désactivé — fermeture manuelle</div>';
     }
     h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">';
     h+=(tpslOn
-      ?'<button onclick="toggleTpsl(''+pid+'')" style="padding:8px;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.25);color:#4ade80;font-family:Orbitron,monospace;font-size:7px;border-radius:8px;cursor:pointer">🔒 TP/SL ON</button>'
-      :'<button onclick="toggleTpsl(''+pid+'')" style="padding:8px;background:rgba(255,150,0,.1);border:1px solid rgba(255,150,0,.25);color:#fb923c;font-family:Orbitron,monospace;font-size:7px;border-radius:8px;cursor:pointer">⏸ TP/SL OFF</button>');
-    h+='<button onclick="closePosById(''+pid+'')" style="padding:8px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#f87171;font-family:Orbitron,monospace;font-size:7px;border-radius:8px;cursor:pointer">✕ FERMER</button>';
+      ?'<button onclick="cmd(\'toggle_'+pid+'\')" style="padding:8px;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.25);color:#4ade80;font-family:Orbitron,monospace;font-size:7px;border-radius:8px;cursor:pointer">🔒 TP/SL ON</button>'
+      :'<button onclick="cmd(\'toggle_'+pid+'\')" style="padding:8px;background:rgba(255,150,0,.1);border:1px solid rgba(255,150,0,.25);color:#fb923c;font-family:Orbitron,monospace;font-size:7px;border-radius:8px;cursor:pointer">⏸ TP/SL OFF</button>');
+    h+='<button onclick="cmd(\'close_pos_'+pid+'\')" style="padding:8px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#f87171;font-family:Orbitron,monospace;font-size:7px;border-radius:8px;cursor:pointer">✕ FERMER</button>';
     h+='</div></div>';
   });
   c.innerHTML=h;
 }
 
-function closePosById(pid){cmd('close_pos_'+pid);}
 function closePos(sym){cmd('close_'+sym.toLowerCase());}
-function toggleTpsl(pid){cmd('toggle_'+pid);}
 
 function rf4(){
   fetch('/api/status',{headers:H}).then(function(r){return r.json();}).then(function(d){rf4data(d.trades||[]);}).catch(function(){});
@@ -1227,47 +1218,43 @@ function addTrigger(){
 function deleteTrigger(tid){
   fetch('/api/trigger/delete',{method:'POST',headers:H,body:JSON.stringify({tid:tid})})
     .then(function(r){return r.json();})
-    .then(function(d){toast(d.msg||'Supprimé',d.ok);rfTriggers();})
-    .catch(function(){});
+    .then(function(d){toast(d.msg||'Supprimé',d.ok);rfTriggers();}).catch(function(){});
 }
 function rfTriggers(){
-  fetch('/api/triggers',{headers:H})
-    .then(function(r){return r.json();})
-    .then(function(d){
-      if(!d||!d.ok)return;
-      var list=d.triggers||[];
-      var cnt=document.getElementById('tr-count');
-      if(cnt) cnt.textContent=list.length>0?'('+list.length+')':'';
-      var bn6l=document.getElementById('bn6l');
-      if(bn6l) bn6l.innerHTML='ORDRES'+(list.length>0?'<span class="badge">'+list.length+'</span>':'');
-      var el=document.getElementById('tr-list');
-      if(!list.length){el.innerHTML='<div class="np">Aucun ordre actif</div>';return;}
-      var h='';
-      list.forEach(function(t){
-        var si=SYMS[t.symbol]||{icon:t.symbol};
-        var isL=t.direction==='BUY';
-        var condTxt=t.condition==='below'?'≤':'≥';
-        h+='<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:10px 12px;margin-bottom:8px">';
-        h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
-        h+='<b style="font-family:Orbitron,monospace;font-size:13px">'+si.icon+' '+t.symbol+'</b>';
-        h+='<span style="font-size:8px;padding:2px 8px;border-radius:20px;border:1px solid '+(isL?'rgba(34,197,94,.2)':'rgba(239,68,68,.2)')+';color:'+(isL?'#22c55e':'#ef4444')+';background:'+(isL?'rgba(34,197,94,.1)':'rgba(239,68,68,.1)')+';">'+(isL?'⬆ LONG':'⬇ SHORT')+'</span>';
-        h+='</div>';
-        h+='<div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:8px">Si prix '+condTxt+' <b style="color:var(--g)">$'+ff(t.target_price)+'</b></div>';
-        h+='<button onclick="deleteTrigger(''+t.id+'')" style="width:100%;padding:8px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#f87171;font-family:Orbitron,monospace;font-size:8px;border-radius:8px;cursor:pointer">✕ ANNULER</button>';
-        h+='</div>';
-      });
-      el.innerHTML=h;
-    }).catch(function(){});
+  fetch('/api/triggers',{headers:H}).then(function(r){return r.json();}).then(function(d){
+    if(!d||!d.ok)return;
+    var list=d.triggers||[];
+    var cnt=document.getElementById('tr-count');
+    if(cnt) cnt.textContent=list.length>0?'('+list.length+')':'';
+    var bn6l=document.getElementById('bn6l');
+    if(bn6l) bn6l.innerHTML='ORDRES'+(list.length>0?'<span class="badge">'+list.length+'</span>':'');
+    var el=document.getElementById('tr-list');
+    if(!list.length){el.innerHTML='<div class="np">Aucun ordre actif</div>';return;}
+    var h='';
+    list.forEach(function(t){
+      var si=SYMS[t.symbol]||{icon:t.symbol}; var isL=t.direction==='BUY';
+      var ct=t.condition==='below'?'≤':'≥';
+      h+='<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:10px 12px;margin-bottom:8px">';
+      h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
+      h+='<b style="font-family:Orbitron,monospace;font-size:13px">'+si.icon+' '+t.symbol+'</b>';
+      h+='<span style="font-size:8px;padding:2px 8px;border-radius:20px;color:'+(isL?'#22c55e':'#ef4444')+';border:1px solid '+(isL?'rgba(34,197,94,.2)':'rgba(239,68,68,.2)')+';background:'+(isL?'rgba(34,197,94,.1)':'rgba(239,68,68,.1)')+';">'+(isL?'⬆ LONG':'⬇ SHORT')+'</span>';
+      h+='</div>';
+      h+='<div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:8px">Si prix '+ct+' <b style="color:var(--g)">$'+ff(t.target_price)+'</b></div>';
+      h+='<button onclick="deleteTrigger(\''+t.id+'\')" style="width:100%;padding:8px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#f87171;font-family:Orbitron,monospace;font-size:8px;border-radius:8px;cursor:pointer">✕ ANNULER</button>';
+      h+='</div>';
+    });
+    el.innerHTML=h;
+  }).catch(function(){});
 }
-function updateTrExplain(){
-  var sym=document.getElementById('tr-sym');
-  var dir=document.getElementById('tr-dir');
-  var el=document.getElementById('tr-explain');
-  if(!sym||!dir||!el)return;
+function updateTrInfo(){
+  var sym=document.getElementById('tr-sym'); var dir=document.getElementById('tr-dir');
+  var el=document.getElementById('tr-info'); if(!sym||!dir||!el)return;
   var si=SYMS[sym.value]||{icon:sym.value};
-  el.textContent=si.icon+(dir.value==='BUY'?' Ouvre LONG quand prix descend au cible':' Ouvre SHORT quand prix monte au cible');
+  el.textContent=si.icon+' '+(dir.value==='BUY'?'LONG quand '+sym.value+' descend au prix cible':'SHORT quand '+sym.value+' monte au prix cible');
 }
-document.addEventListener('change',function(e){if(e.target&&(e.target.id==='tr-dir'||e.target.id==='tr-sym'))updateTrExplain();});
+var trSym=document.getElementById('tr-sym'); var trDir=document.getElementById('tr-dir');
+if(trSym) trSym.addEventListener('change',updateTrInfo);
+if(trDir) trDir.addEventListener('change',updateTrInfo);
 
 rf();
 rfTriggers();
@@ -1332,12 +1319,12 @@ class H(BaseHTTPRequestHandler):
                 if not u: self.sj({"ok":False},401); return
                 admin=get_admin()
                 bot_on=bool(admin and admin.get("bot_actif"))
-                pos=get_positions(u["id"])
+                positions=get_positions(u["id"])  # liste
                 trades=get_trades(u["id"])
                 prices=get_all_prices()
                 self.sj({"ok":True,"actif":bot_on,"balance":round(float(u["balance"]),2),
                     "levier":u["levier"],"mise":u["mise"],
-                    "prices":prices,"positions":pos,"trades":trades})
+                    "prices":prices,"positions":positions,"trades":trades})
             elif p=="/api/ohlc":
                 u=auth(self.tok())
                 if not u: self.sj([],401); return
@@ -1443,21 +1430,16 @@ class H(BaseHTTPRequestHandler):
                 u=auth(self.tok())
                 if not u: self.sj({"ok":False},401); return
                 self.sj({"ok":True,"triggers":get_triggers(u["id"])})
-
             elif p=="/api/trigger/add":
                 u=auth(self.tok())
                 if not u: self.sj({"ok":False},401); return
                 sym=body.get("symbol","BTC"); direction=body.get("direction","BUY")
                 target=float(body.get("target",0)); condition=body.get("condition","below")
-                if not target or sym not in SYMBOLS:
-                    self.sj({"ok":False,"error":"Paramètres invalides"}); return
+                if not target or sym not in SYMBOLS: self.sj({"ok":False,"error":"Params invalides"}); return
                 tid=save_trigger(u["id"],sym,direction,target,condition)
-                ic=SYMBOLS[sym]["icon"]
-                lbl="🟢 LONG" if direction=="BUY" else "🔴 SHORT"
+                ic=SYMBOLS[sym]["icon"]; lbl="🟢 LONG" if direction=="BUY" else "🔴 SHORT"
                 cond_txt="<=" if condition=="below" else ">="
-                msg=f"🎯 Ordre : {ic} {sym} {lbl} si prix {cond_txt} ${target:,.2f}"
-                self.sj({"ok":True,"tid":tid,"msg":msg})
-
+                self.sj({"ok":True,"tid":tid,"msg":f"🎯 Ordre: {ic} {sym} {lbl} si ${target:,.2f} {cond_txt}"})
             elif p=="/api/trigger/delete":
                 u=auth(self.tok())
                 if not u: self.sj({"ok":False},401); return
@@ -1465,9 +1447,8 @@ class H(BaseHTTPRequestHandler):
                 try:
                     db_=get_db(); row=db_.execute("SELECT id FROM triggers WHERE id=? AND user_id=?",(tid,u["id"])).fetchone(); db_.close()
                     if row: delete_trigger(tid); self.sj({"ok":True,"msg":"Ordre supprimé"})
-                    else: self.sj({"ok":False,"error":"Ordre introuvable"})
+                    else: self.sj({"ok":False,"error":"Introuvable"})
                 except: self.sj({"ok":False,"error":"Erreur"})
-
             elif p=="/api/cmd":
                 u=auth(self.tok())
                 if not u: self.sj({"ok":False,"redirect":"/"},401); return
@@ -1487,9 +1468,9 @@ class H(BaseHTTPRequestHandler):
                 elif c=="closeall":
                     pos=get_positions(uid); tot=0
                     if pos:
-                        for pid,p in list(pos.items()):
-                            price_k=get_price(p["sym"]) or float(p["e"])
-                            pnl=close_trade_by_id(pid,price_k,"🔒 Fermer tout")
+                        for sk in list(pos.keys()):
+                            price_k=get_price(sk) or float(pos[sk]["e"])
+                            pnl=close_trade(uid,sk,price_k,"🔒 Fermer tout")
                             if pnl is not None: tot+=pnl
                         u2=get_user_by_id(uid)
                         msg=f"🔒 Tout fermé | {tot:+.4f}€ | Solde: {u2['balance']:.2f}€"
@@ -1525,40 +1506,14 @@ class H(BaseHTTPRequestHandler):
                         else: ok=False; msg="❌ Prix indisponible"
 
                     elif "close" in c:
-                        if "pos_" in c:
-                            # Fermer par pos_id: close_pos_{pid}
-                            pos_id = c.split("pos_",1)[-1]
-                            p_row = get_pos_by_id(pos_id)
-                            if p_row and p_row["user_id"]==uid:
-                                price=get_price(p_row["symbol"]) or float(p_row["entry"])
-                                pnl=close_trade_by_id(pos_id,price,"🔒 Fermeture manuelle")
-                                if pnl is not None:
-                                    u2=get_user_by_id(uid)
-                                    msg=f"🔒 {p_row['symbol']} fermé | {pnl:+.4f}€ | Solde: {u2['balance']:.2f}€"
-                                else: ok=False; msg="Position introuvable"
-                            else: ok=False; msg="Position introuvable"
-                        else:
-                            # Fermer toutes les positions sur ce symbole
-                            pos=get_positions(uid); closed=0; tot=0
-                            for pid,p in pos.items():
-                                if p["sym"]==sym:
-                                    price=get_price(sym) or float(p["e"])
-                                    pnl=close_trade_by_id(pid,price,"🔒 Fermeture manuelle")
-                                    if pnl is not None: tot+=pnl; closed+=1
-                            if closed:
-                                u2=get_user_by_id(uid)
-                                msg=f"🔒 {closed}x {sym} fermé(s) | {tot:+.4f}€ | Solde: {u2['balance']:.2f}€"
-                            else: ok=False; msg=f"Pas de position {sym}"
+                        price=get_price(sym) or 0
+                        pnl=close_trade(uid,sym,price,"🔒 Fermeture manuelle")
+                        if pnl is not None:
+                            u2=get_user_by_id(uid)
+                            msg=f"🔒 {sym} fermé | {pnl:+.4f}€ | Solde: {u2['balance']:.2f}€"
+                        else: ok=False; msg=f"Pas de position {sym} ouverte"
 
-                    elif "toggle" in c:
-                        pos_id=c.replace("toggle_","")
-                        p_row=get_pos_by_id(pos_id)
-                        if p_row and p_row["user_id"]==uid:
-                            state=toggle_tpsl(pos_id)
-                            msg=f"TP/SL {'✅ activé' if state else '⏸ désactivé'} pour {p_row['symbol']}"
-                        else: ok=False; msg="Position introuvable"
-
-                    else: ok=False; msg="❌ Action inconnue"
+                    else: ok=False; msg=f"❌ Action inconnue"
 
                 self.sj({"ok":ok,"msg":msg})
             else:
@@ -1587,10 +1542,9 @@ def run():
     create_admin_if_missing()
     start_all()
 
-    # Moniteur TP/SL : toujours actif
+    # Moniteur TP/SL
     threading.Thread(target=tpsl_monitor, daemon=True).start()
-
-    # Moniteur ordres à prix cible
+    # Moniteur ordres limites
     threading.Thread(target=trigger_monitor, daemon=True).start()
 
     # Backup GitHub toutes les 60 secondes
