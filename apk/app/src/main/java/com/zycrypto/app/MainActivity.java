@@ -19,27 +19,24 @@ public class MainActivity extends Activity {
         LinearLayout lay = new LinearLayout(this);
         lay.setOrientation(LinearLayout.VERTICAL);
         lay.setBackgroundColor(Color.parseColor("#07070a"));
-
         pb = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         pb.setLayoutParams(new LinearLayout.LayoutParams(-1, 6));
         pb.setMax(100);
         pb.setProgressTintList(android.content.res.ColorStateList.valueOf(
             Color.parseColor("#f5c518")));
         lay.addView(pb);
-
         wv = new WebView(this);
         wv.setLayoutParams(new LinearLayout.LayoutParams(-1, -1));
         lay.addView(wv);
         setContentView(lay);
-
         WebSettings ws = wv.getSettings();
         ws.setJavaScriptEnabled(true);
         ws.setDomStorageEnabled(true);
         ws.setCacheMode(WebSettings.LOAD_DEFAULT);
         ws.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        CookieManager.getInstance().setAcceptCookie(true);
-        CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true);
-
+        CookieManager cm = CookieManager.getInstance();
+        cm.setAcceptCookie(true);
+        cm.setAcceptThirdPartyCookies(wv, true);
         wv.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView v, String u) {
                 v.loadUrl(u); return true;
