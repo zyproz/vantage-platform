@@ -290,21 +290,20 @@ def trading_loop(uid):
                 sn,price,rv=get_signal(sym); pos=DB.get_positions(uid); en=sym in pos
                 if en:
                     p=pos[sym]; d=p["d"]; r=None
+                    # BOT: seulement TP/SL — pas de retournement sur positions manuelles
                     if d=="BUY":
                         if price>=float(p["tp"]): r="✅ Take-Profit"
                         elif price<=float(p["sl"]): r="🛡️ Stop-Loss"
                     else:
                         if price<=float(p["tp"]): r="✅ Take-Profit"
                         elif price>=float(p["sl"]): r="🛡️ Stop-Loss"
-                    if not r:
-                        if sn=="SELL" and d=="BUY": r="🔄 Retournement"
-                        elif sn=="BUY" and d=="SELL": r="🔄 Retournement"
                     if r:
                         pnl=close_trade(uid,sym,price,r)
                         if pnl is not None:
                             u2=DB.get_by_id(uid); nm=SYMBOLS[sym]["name"]; ic=SYMBOLS[sym]["icon"]
                             tg(f"{'💰' if pnl>=0 else '💸'} *{ic} {nm}* — {r}\n`{float(p['e']):.4f}` → `{price:.4f}`\nProfit:`{pnl:+.4f}€` Solde:`{u2['balance']:.2f}€`")
                         en=False
+                # BOT: n'ouvre de nouvelles positions QUE si aucune position sur ce symbole
                 if not en and sn in("BUY","SELL"):
                     u=DB.get_by_id(uid)
                     if u and float(u["balance"])>=float(u["mise"]):
@@ -669,7 +668,7 @@ Object.entries(SYMS).forEach(([k,v])=>{
 
 function sp(n){document.querySelectorAll('.pg').forEach(p=>p.classList.remove('a'));document.querySelectorAll('.bnt').forEach(b=>b.classList.remove('a'));document.getElementById('p'+n).classList.add('a');document.getElementById('bn'+n).classList.add('a');cp=n;if(n===2)lc();if(n===3)rf3();if(n===4)ls();}
 const H={'Content-Type':'application/json','Authorization':'Bearer '+TK};
-const ff=n=>{if(!n&&n!==0)return'--';return n>=1000?n.toLocaleString('fr-FR',{maximumFractionDigits:n>=100?2:4}):n.toFixed(4);};
+const ff=n=>{if(n===null||n===undefined||isNaN(n))return'--';if(n>=1000)return n.toLocaleString('fr-FR',{maximumFractionDigits:2});if(n>=1)return n.toFixed(2);return n.toFixed(6);};
 const pc=v=>v>=0?'gg':'rr';const ps=v=>v>=0?'+':'';
 function toast(m,ok=true){const t=document.getElementById('toast');t.textContent=m;t.className='toast '+(ok?'ok':'er')+' sv';setTimeout(()=>t.classList.remove('sv'),2500);}
 async function cmd(c){
@@ -854,43 +853,56 @@ class H(BaseHTTPRequestHandler):
                 if actif: ensure_thread(uid);msg="🟢 Bot démarré !";tg(f"🚀 *ZyCrypto Bot démarré* par {u['username']}")
                 else: msg="⏹ Bot arrêté"
 
+            elif c=="closeall":
+                # Fermer tout sans besoin de symbole
+                pos=DB.get_positions(uid);tot=0
+                if pos:
+                    for sk in list(pos.keys()):
+                        cp=get_price(sk) or float(pos[sk]["e"])
+                        pnl=close_trade(uid,sk,cp,"🔒 Fermer tout")
+                        if pnl is not None: tot+=pnl
+                    u2=DB.get_by_id(uid)
+                    msg=f"🔒 Tout fermé | {tot:+.4f}€ | Solde: {u2['balance']:.2f}€"
+                    tg(f"🔒 *Tout fermé* ({u['username']}) | `{tot:+.4f}€`")
+                else: ok=False;msg="Rien à fermer"
+
             else:
                 # Détecter le symbole depuis la commande
                 sym=None
                 for s in SYMBOLS:
                     if s.lower() in c: sym=s; break
-                if not sym: self.sj({"ok":False,"msg":"❌ Symbole inconnu"}); return
+                if not sym: self.sj({"ok":False,"msg":"❌ Commande inconnue"}); return
 
                 if "buy" in c or "long" in c:
                     price=get_price(sym)
-                    if price:
+                    if price and price>0:
                         t=open_trade(uid,sym,"BUY",price)
-                        if t: msg=f"🟢 LONG {SYMBOLS[sym]['icon']} {sym} @ ${price:.4f}";tg(f"⚡ *{msg}* ({u['username']})")
+                        if t:
+                            msg=f"🟢 LONG {SYMBOLS[sym]['icon']} {sym} @ ${price:.4f}"
+                            tg(f"⚡ *{msg}* ({u['username']})")
                         else: ok=False;msg="❌ Solde insuffisant"
                     else: ok=False;msg="❌ Prix indisponible"
 
                 elif "sell" in c or "short" in c:
                     price=get_price(sym)
-                    if price:
+                    if price and price>0:
                         t=open_trade(uid,sym,"SELL",price)
-                        if t: msg=f"🔴 SHORT {SYMBOLS[sym]['icon']} {sym} @ ${price:.4f}";tg(f"⚡ *{msg}* ({u['username']})")
+                        if t:
+                            msg=f"🔴 SHORT {SYMBOLS[sym]['icon']} {sym} @ ${price:.4f}"
+                            tg(f"⚡ *{msg}* ({u['username']})")
                         else: ok=False;msg="❌ Solde insuffisant"
                     else: ok=False;msg="❌ Prix indisponible"
 
-                elif "close" in c and "all" not in c:
+                elif "close" in c:
                     price=get_price(sym)
-                    pnl=close_trade(uid,sym,price,"🔒 Fermeture manuelle")
-                    if pnl is not None:
-                        u2=DB.get_by_id(uid);msg=f"🔒 {sym} fermé | {pnl:+.4f}€ | Solde: {u2['balance']:.2f}€"
-                    else: ok=False;msg=f"Pas de position {sym}"
-
-                elif "closeall" in c:
-                    pos=DB.get_positions(uid);tot=0
-                    for sk in list(pos.keys()):
-                        pnl=close_trade(uid,sk,get_price(sk) or float(pos[sk]["e"]),"🔒 Fermer tout")
-                        if pnl: tot+=pnl
-                    if pos: msg=f"🔒 Tout fermé | {tot:+.4f}€"
-                    else: ok=False;msg="Rien à fermer"
+                    if price and price>0:
+                        pnl=close_trade(uid,sym,price,"🔒 Fermeture manuelle")
+                        if pnl is not None:
+                            u2=DB.get_by_id(uid)
+                            msg=f"🔒 {sym} fermé | {pnl:+.4f}€ | Solde: {u2['balance']:.2f}€"
+                            tg(f"🔒 *{sym}* ({u['username']}) | `{pnl:+.4f}€`")
+                        else: ok=False;msg=f"Pas de position {sym}"
+                    else: ok=False;msg="❌ Prix indisponible"
 
             self.sj({"ok":ok,"msg":msg})
         else: self.send_response(404);self.end_headers()
