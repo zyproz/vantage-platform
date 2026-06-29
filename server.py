@@ -1325,6 +1325,10 @@ class H(BaseHTTPRequestHandler):
                 self.sj({"ok":True,"actif":bot_on,"balance":round(float(u["balance"]),2),
                     "levier":u["levier"],"mise":u["mise"],
                     "prices":prices,"positions":positions,"trades":trades})
+            elif p=="/api/triggers":
+                u=auth(self.tok())
+                if not u: self.sj({"ok":False},401); return
+                self.sj({"ok":True,"triggers":get_triggers(u["id"])})
             elif p=="/api/ohlc":
                 u=auth(self.tok())
                 if not u: self.sj([],401); return
@@ -1426,10 +1430,6 @@ class H(BaseHTTPRequestHandler):
                 if not u or not u["is_admin"]: self.sj({"ok":False},403); return
                 self.sj({"ok":True,"users":get_all_users()})
 
-            elif p=="/api/triggers":
-                u=auth(self.tok())
-                if not u: self.sj({"ok":False},401); return
-                self.sj({"ok":True,"triggers":get_triggers(u["id"])})
             elif p=="/api/trigger/add":
                 u=auth(self.tok())
                 if not u: self.sj({"ok":False},401); return
@@ -1468,17 +1468,36 @@ class H(BaseHTTPRequestHandler):
                 elif c=="closeall":
                     pos=get_positions(uid); tot=0
                     if pos:
-                        for sk in list(pos.keys()):
-                            price_k=get_price(sk) or float(pos[sk]["e"])
-                            pnl=close_trade(uid,sk,price_k,"🔒 Fermer tout")
+                        for p in list(pos):
+                            price_k=get_price(p["sym"]) or float(p["e"])
+                            pnl=close_trade_by_id(p["id"],price_k,"🔒 Fermer tout")
                             if pnl is not None: tot+=pnl
                         u2=get_user_by_id(uid)
                         msg=f"🔒 Tout fermé | {tot:+.4f}€ | Solde: {u2['balance']:.2f}€"
                     else:
                         ok=False; msg="Aucune position à fermer"
 
+                elif c.startswith("close_pos_"):
+                    pid=c[len("close_pos_"):]
+                    row=get_pos_by_id(pid)
+                    if row and row["user_id"]==uid:
+                        price=get_price(row["symbol"]) or float(row["entry"])
+                        pnl=close_trade_by_id(pid,price,"🔒 Fermeture manuelle")
+                        if pnl is not None:
+                            u2=get_user_by_id(uid)
+                            msg=f"🔒 {row['symbol']} fermé | {pnl:+.4f}€ | Solde: {u2['balance']:.2f}€"
+                        else: ok=False; msg="Position introuvable"
+                    else: ok=False; msg="Position introuvable"
+
+                elif c.startswith("toggle_"):
+                    pid=c[len("toggle_"):]
+                    row=get_pos_by_id(pid)
+                    if row and row["user_id"]==uid:
+                        state=toggle_tpsl(pid)
+                        msg=f"TP/SL {'✅ activé' if state else '⏸ désactivé'} pour {row['symbol']}"
+                    else: ok=False; msg="Position introuvable"
+
                 else:
-                    # Détecter le symbole
                     sym=None
                     for s in SYMBOLS:
                         if s.lower() in c: sym=s; break
@@ -1506,14 +1525,18 @@ class H(BaseHTTPRequestHandler):
                         else: ok=False; msg="❌ Prix indisponible"
 
                     elif "close" in c:
-                        price=get_price(sym) or 0
-                        pnl=close_trade(uid,sym,price,"🔒 Fermeture manuelle")
-                        if pnl is not None:
+                        pos=get_positions(uid); closed=0; tot=0
+                        for p in pos:
+                            if p["sym"]==sym:
+                                pr=get_price(sym) or float(p["e"])
+                                pnl=close_trade_by_id(p["id"],pr,"🔒 Fermeture manuelle")
+                                if pnl is not None: tot+=pnl; closed+=1
+                        if closed:
                             u2=get_user_by_id(uid)
-                            msg=f"🔒 {sym} fermé | {pnl:+.4f}€ | Solde: {u2['balance']:.2f}€"
+                            msg=f"🔒 {closed}x {sym} fermé(s) | {tot:+.4f}€ | Solde: {u2['balance']:.2f}€"
                         else: ok=False; msg=f"Pas de position {sym} ouverte"
 
-                    else: ok=False; msg=f"❌ Action inconnue"
+                    else: ok=False; msg="❌ Action inconnue"
 
                 self.sj({"ok":ok,"msg":msg})
             else:
