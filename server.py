@@ -290,20 +290,19 @@ def trading_loop(uid):
                 sn,price,rv=get_signal(sym); pos=DB.get_positions(uid); en=sym in pos
                 if en:
                     p=pos[sym]; d=p["d"]; r=None
-                    # BOT: seulement TP/SL — pas de retournement sur positions manuelles
                     if d=="BUY":
                         if price>=float(p["tp"]): r="✅ Take-Profit"
                         elif price<=float(p["sl"]): r="🛡️ Stop-Loss"
                     else:
                         if price<=float(p["tp"]): r="✅ Take-Profit"
                         elif price>=float(p["sl"]): r="🛡️ Stop-Loss"
+                    # Pas de retournement - TP/SL seulement
                     if r:
                         pnl=close_trade(uid,sym,price,r)
                         if pnl is not None:
                             u2=DB.get_by_id(uid); nm=SYMBOLS[sym]["name"]; ic=SYMBOLS[sym]["icon"]
                             tg(f"{'💰' if pnl>=0 else '💸'} *{ic} {nm}* — {r}\n`{float(p['e']):.4f}` → `{price:.4f}`\nProfit:`{pnl:+.4f}€` Solde:`{u2['balance']:.2f}€`")
                         en=False
-                # BOT: n'ouvre de nouvelles positions QUE si aucune position sur ce symbole
                 if not en and sn in("BUY","SELL"):
                     u=DB.get_by_id(uid)
                     if u and float(u["balance"])>=float(u["mise"]):
@@ -435,24 +434,25 @@ DASH_HTML = r"""<!DOCTYPE html>
 :root{--g:#f5c518;--bg:#07070a}
 body{background:var(--bg);font-family:'Rajdhani',sans-serif;color:#fff;padding-bottom:68px}
 .bnav{position:fixed;bottom:0;left:0;right:0;background:rgba(7,7,10,.97);border-top:1px solid rgba(245,197,24,.1);display:flex;z-index:100}
-.bnt{flex:1;padding:10px 0;border:none;background:none;color:rgba(255,255,255,.28);font-size:20px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px}
+.bnt{flex:1;padding:10px 0;border:none;background:none;color:rgba(255,255,255,.28);font-size:18px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px}
 .bnt span{font-size:7px;font-family:'Orbitron',monospace;letter-spacing:1px}
 .bnt.a{color:var(--g)}
+.bnt.a span{color:var(--g)}
 .pg{display:none;padding:12px}.pg.a{display:block}
+/* HEADER */
 .logo{font-family:'Orbitron',monospace;font-size:20px;font-weight:900;color:var(--g);text-align:center;padding:10px 0 2px;letter-spacing:3px}
 .sub{font-family:'Orbitron',monospace;font-size:7px;letter-spacing:5px;color:rgba(245,197,24,.2);text-align:center;margin-bottom:8px}
 .sr{display:flex;align-items:center;justify-content:center;gap:7px;margin-bottom:8px}
 .dot{width:8px;height:8px;border-radius:50%;background:#333}.dot.on{background:#22c55e;box-shadow:0 0 6px #22c55e}.dot.off{background:#ef4444}
 .st{font-size:11px;color:rgba(255,255,255,.3)}
 hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,197,24,.2),transparent);margin:8px 0}
-/* PRIX TICKER */
+/* TICKER */
 .ticker{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:8px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 .ticker::-webkit-scrollbar{display:none}
-.tk{background:rgba(245,197,24,.04);border:1px solid rgba(245,197,24,.1);border-radius:10px;padding:8px 10px;min-width:80px;flex-shrink:0;position:relative;overflow:hidden}
-.tk::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--tc,rgba(245,197,24,.3)),transparent)}
-.tk-sym{font-family:'Orbitron',monospace;font-size:7px;color:rgba(255,255,255,.35);letter-spacing:1px}
-.tk-ico{font-size:14px;margin:1px 0}
-.tk-px{font-family:'Orbitron',monospace;font-size:11px;font-weight:900;color:var(--g)}
+.tk{background:rgba(245,197,24,.04);border:1px solid rgba(245,197,24,.1);border-radius:10px;padding:8px 10px;min-width:80px;flex-shrink:0}
+.tk-s{font-family:'Orbitron',monospace;font-size:7px;color:rgba(245,197,24,.35);letter-spacing:1px}
+.tk-i{font-size:14px;margin:1px 0}
+.tk-p{font-family:'Orbitron',monospace;font-size:11px;font-weight:900;color:var(--g)}
 /* BALANCE */
 .bal{background:rgba(245,197,24,.06);border:1px solid rgba(245,197,24,.15);border-radius:12px;padding:10px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
 .blab{font-family:'Orbitron',monospace;font-size:8px;color:rgba(255,255,255,.28);letter-spacing:1px}
@@ -468,9 +468,9 @@ hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,
 .sym-row::-webkit-scrollbar{display:none}
 .sym-btn{background:rgba(245,197,24,.05);border:1px solid rgba(245,197,24,.1);color:rgba(255,255,255,.45);padding:5px 10px;border-radius:8px;font-family:'Orbitron',monospace;font-size:8px;cursor:pointer;white-space:nowrap;flex-shrink:0}
 .sym-btn.a{background:rgba(245,197,24,.15);border-color:rgba(245,197,24,.4);color:var(--g)}
-/* BOUTONS */
+/* BOUTONS ORDRES */
 .g2b{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}
-.btn{border:none;border-radius:10px;padding:11px 6px;font-family:'Orbitron',monospace;font-size:8px;font-weight:700;cursor:pointer;letter-spacing:1px;transition:.1s;width:100%}
+.btn{border:none;border-radius:10px;padding:12px 6px;font-family:'Orbitron',monospace;font-size:9px;font-weight:700;cursor:pointer;letter-spacing:1px;transition:.1s;width:100%}
 .btn:active{transform:scale(.93)}
 .bst{background:linear-gradient(135deg,#14532d,#166534);color:#4ade80;border:1px solid rgba(74,222,128,.2)}
 .bsp{background:linear-gradient(135deg,#7f1d1d,#991b1b);color:#f87171;border:1px solid rgba(248,113,113,.2)}
@@ -479,21 +479,26 @@ hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,
 .bcl{background:rgba(245,197,24,.07);color:var(--g);border:1px solid rgba(245,197,24,.12);padding:10px 4px}
 .bca{background:rgba(168,85,247,.08);color:#c084fc;border:1px solid rgba(168,85,247,.18);font-size:8px;padding:10px}
 .admin-only{display:none}
-/* POSITIONS */
-.po{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.04);border-radius:10px;padding:9px 11px;margin-bottom:6px;position:relative;overflow:hidden}
-.po.lg::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:#22c55e;box-shadow:0 0 5px #22c55e}
-.po.sh::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:#ef4444;box-shadow:0 0 5px #ef4444}
-.pt{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
-.py{font-family:'Orbitron',monospace;font-size:11px;font-weight:700}
-.pd{font-size:8px;font-weight:700;letter-spacing:2px;padding:2px 6px;border-radius:20px}
-.pd.lg{background:rgba(34,197,94,.1);color:#22c55e;border:1px solid rgba(34,197,94,.18)}
-.pd.sh{background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.18)}
-.pr{display:flex;justify-content:space-between;font-size:10px;color:rgba(255,255,255,.28);margin-top:2px}
-.pp{font-family:'Orbitron',monospace;font-size:12px;font-weight:900}
-.tsl{display:flex;gap:5px;margin-top:3px}
-.tpb{font-size:7px;padding:1px 5px;border-radius:20px;font-family:'Orbitron',monospace;background:rgba(34,197,94,.06);color:rgba(34,197,94,.5);border:1px solid rgba(34,197,94,.1)}
-.slb{font-size:7px;padding:1px 5px;border-radius:20px;font-family:'Orbitron',monospace;background:rgba(239,68,68,.06);color:rgba(239,68,68,.5);border:1px solid rgba(239,68,68,.1)}
-.np{text-align:center;padding:14px;color:rgba(255,255,255,.1);font-size:11px}
+/* CARTE POSITION */
+.po{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:12px 14px;margin-bottom:10px;position:relative;overflow:hidden}
+.po::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px}
+.po.lg::before{background:#22c55e;box-shadow:0 0 6px #22c55e}
+.po.sh::before{background:#ef4444;box-shadow:0 0 6px #ef4444}
+.po-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.po-sym{font-family:'Orbitron',monospace;font-size:14px;font-weight:700}
+.po-dir{font-size:8px;font-weight:700;letter-spacing:2px;padding:3px 8px;border-radius:20px}
+.po-dir.lg{background:rgba(34,197,94,.12);color:#22c55e;border:1px solid rgba(34,197,94,.2)}
+.po-dir.sh{background:rgba(239,68,68,.12);color:#ef4444;border:1px solid rgba(239,68,68,.2)}
+.po-row{display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.4);margin-bottom:4px}
+.po-pnl{font-family:'Orbitron',monospace;font-size:16px;font-weight:900;text-align:center;padding:6px 0 8px}
+.po-bar{height:4px;background:rgba(255,255,255,.07);border-radius:2px;margin-bottom:8px;position:relative}
+.po-bar-fill{height:100%;border-radius:2px;transition:.5s}
+.po-labels{display:flex;justify-content:space-between;font-family:'Orbitron',monospace;font-size:7px;margin-bottom:10px}
+.po-close-btn{width:100%;padding:10px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#f87171;font-family:'Orbitron',monospace;font-size:9px;font-weight:700;letter-spacing:2px;border-radius:8px;cursor:pointer;transition:.1s}
+.po-close-btn:active{transform:scale(.97);background:rgba(239,68,68,.2)}
+.badge-count{background:var(--g);color:#07070a;font-family:'Orbitron',monospace;font-size:8px;font-weight:900;padding:1px 6px;border-radius:10px;margin-left:4px}
+.np{text-align:center;padding:30px 14px;color:rgba(255,255,255,.15);font-size:12px;font-family:'Orbitron',monospace;letter-spacing:1px}
+/* TOAST */
 .toast{position:fixed;top:12px;left:50%;transform:translateX(-50%);padding:8px 16px;border-radius:20px;font-family:'Orbitron',monospace;font-size:9px;z-index:200;opacity:0;transition:.25s;pointer-events:none;white-space:nowrap}
 .toast.ok{background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);color:#4ade80}
 .toast.er{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:#f87171}
@@ -514,7 +519,7 @@ hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,
 /* SETTINGS */
 .sf{margin-bottom:12px}
 .sf label{font-size:9px;color:rgba(255,255,255,.32);letter-spacing:2px;font-family:'Orbitron',monospace;display:block;margin-bottom:5px}
-.sf input{width:100%;background:rgba(245,197,24,.04);border:1px solid rgba(245,197,24,.1);border-radius:8px;padding:10px 12px;color:#fff;font-family:'Rajdhani',sans-serif;font-size:14px;outline:none;transition:.2s}
+.sf input,.sf select{width:100%;background:rgba(245,197,24,.04);border:1px solid rgba(245,197,24,.1);border-radius:8px;padding:10px 12px;color:#fff;font-family:'Rajdhani',sans-serif;font-size:14px;outline:none;transition:.2s}
 .sf input:focus{border-color:rgba(245,197,24,.3)}
 .ubadge{background:rgba(245,197,24,.05);border:1px solid rgba(245,197,24,.1);border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
 .adbg{background:rgba(245,197,24,.15);border:1px solid rgba(245,197,24,.4);color:var(--g);font-family:'Orbitron',monospace;font-size:9px;padding:3px 10px;border-radius:20px;display:none}
@@ -525,15 +530,12 @@ hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,
 </style></head><body>
 <div id="toast" class="toast"></div>
 
-<!-- PAGE 1: TRADE -->
+<!-- ═══ PAGE 1: TRADE ═══ -->
 <div id="p1" class="pg a">
 <div class="logo">⚡ ZYCRYPTO</div>
 <div class="sub">MULTI-CRYPTO · CLOUD · LIVE</div>
 <div class="sr"><div class="dot" id="d1"></div><span class="st" id="s1">Connexion...</span></div>
-
-<!-- TICKER PRIX -->
 <div class="ticker" id="ticker"></div>
-
 <div class="bal">
   <div><div class="blab">SOLDE DÉMO</div><div class="bval" id="bval">--</div></div>
   <div style="text-align:right">
@@ -547,43 +549,46 @@ hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,
   <div class="sc"><div class="sn" id="wr">--%</div><div class="sl">WIN RATE</div></div>
   <div class="sc"><div class="sn" id="tps">+0€</div><div class="sl">PROFIT</div></div>
 </div><hr>
-<!-- POSITIONS EN COURS (toujours visible) -->
-<div class="tt" id="pos-title">⚡ POSITIONS EN COURS <span id="pos-count" style="color:rgba(255,255,255,.3);font-size:7px"></span></div>
-<div id="pos-live"><div class="np">📭 Aucune position — en attente de signal</div></div>
-<hr>
-
-<!-- ADMIN BOT CONTROL -->
 <div class="admin-only" id="admin-ctrl">
-  <div class="tt">👑 CONTRÔLE BOT — ADMIN</div>
+  <div class="tt">👑 ADMIN — CONTRÔLE BOT</div>
   <div class="g2b" style="margin-bottom:10px">
-    <button class="btn bst" onclick="cmd('start')">▶ DÉMARRER BOT<br><span style="font-size:7px;opacity:.5">Tous les users</span></button>
+    <button class="btn bst" onclick="cmd('start')">▶ DÉMARRER BOT</button>
     <button class="btn bsp" onclick="cmd('stop')">⏹ ARRÊTER BOT</button>
   </div><hr>
 </div>
-
-<!-- SYMBOL SELECTOR -->
 <div class="tt">📊 CHOISIR LA CRYPTO</div>
 <div class="sym-row" id="sym-sel"></div>
-
-<!-- ORDRE MANUEL -->
 <div class="tt" id="trade-tt">ORDRES — BTC</div>
 <div class="g2b">
-  <button class="btn bln" onclick="cmd('buy')">🟢 LONG</button>
-  <button class="btn bsh" onclick="cmd('sell')">🔴 SHORT</button>
+  <button class="btn bln" onclick="trade('buy')">🟢 LONG</button>
+  <button class="btn bsh" onclick="trade('sell')">🔴 SHORT</button>
 </div>
 <div class="g2b">
-  <button class="btn bcl" onclick="cmd('close')">🔒 FERMER</button>
+  <button class="btn bcl" onclick="trade('close')">🔒 FERMER</button>
   <button class="btn bca" onclick="cmd('closeall')">🔒 FERMER TOUT</button>
 </div>
-
-<hr><div class="tt">⚡ POSITIONS OUVERTES</div>
-<div id="pos"><div class="np">📭 Aucune position</div></div>
 <div class="rfb"><div class="rfi" id="rfi"></div></div>
-<div class="ft">ZYCRYPTO v1.2 · ZYPROZ · 2026</div>
+<div class="ft">ZYCRYPTO v1.3 · ZYPROZ · 2026</div>
 </div>
 
-<!-- PAGE 2: GRAPHIQUE -->
+<!-- ═══ PAGE 2: EN COURS ═══ -->
 <div id="p2" class="pg">
+<div class="logo" style="font-size:16px;padding:10px 0 3px">💼 EN COURS</div>
+<div class="sub">POSITIONS OUVERTES · P&amp;L TEMPS RÉEL</div>
+<div class="sr"><div class="dot" id="d2"></div><span class="st" id="s2">--</span></div>
+<hr>
+<div id="pos-container">
+  <div class="np">📭 Aucune position ouverte</div>
+</div>
+<div style="margin-top:10px">
+  <button class="btn bca" onclick="cmd('closeall')">🔒 FERMER TOUTES LES POSITIONS</button>
+</div>
+<div class="rfb"><div class="rfi" id="rfi2"></div></div>
+<div class="ft">ZYCRYPTO v1.3 · ZYPROZ · 2026</div>
+</div>
+
+<!-- ═══ PAGE 3: GRAPHIQUE ═══ -->
+<div id="p3" class="pg">
 <div class="logo" style="font-size:15px;padding:10px 0 4px">📈 GRAPHIQUE LIVE</div>
 <div class="ctb">
   <select id="ch-sym" onchange="lc()" style="background:rgba(245,197,24,.06);border:1px solid rgba(245,197,24,.12);color:var(--g);padding:5px 10px;border-radius:8px;font-family:'Orbitron',monospace;font-size:8px;cursor:pointer">
@@ -605,8 +610,8 @@ hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,
 </div>
 </div>
 
-<!-- PAGE 3: HISTORIQUE -->
-<div id="p3" class="pg">
+<!-- ═══ PAGE 4: HISTORIQUE ═══ -->
+<div id="p4" class="pg">
 <div class="logo" style="font-size:15px;padding:10px 0 4px">📋 HISTORIQUE CLOUD</div>
 <div class="hss">
   <div class="hsc"><div class="hsn" id="h-t">0</div><div class="hsl">TRADES</div></div>
@@ -614,11 +619,11 @@ hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,
   <div class="hsc"><div class="hsn" id="h-p">+0€</div><div class="hsl">PROFIT NET</div></div>
 </div>
 <hr><div class="tt">📜 TOUS LES TRADES</div>
-<div id="hl"><div class="np">Aucun trade — données sauvegardées cloud</div></div>
+<div id="hl"><div class="np">Aucun trade</div></div>
 </div>
 
-<!-- PAGE 4: COMPTE -->
-<div id="p4" class="pg">
+<!-- ═══ PAGE 5: COMPTE ═══ -->
+<div id="p5" class="pg">
 <div class="logo" style="font-size:15px;padding:10px 0 4px">⚙️ MON COMPTE</div>
 <div class="ubadge">
   <div><div style="font-size:14px;font-weight:700" id="u-name">--</div><div style="font-size:10px;color:rgba(255,255,255,.3)" id="u-email">--</div></div>
@@ -635,180 +640,330 @@ hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,
 </div>
 <button class="btn bst" onclick="saveSettings()" style="margin-bottom:12px">💾 SAUVEGARDER</button>
 <hr><div class="tt">🔗 VANTAGE LIVE (OPTIONNEL)</div>
-<div class="sf"><label>META API TOKEN</label><input type="text" id="cfg-meta" placeholder="Pour trader en vrai argent"></div>
+<div class="sf"><label>META API TOKEN</label><input type="text" id="cfg-meta" placeholder="Pour vrai argent"></div>
 <div class="sf"><label>ACCOUNT ID</label><input type="text" id="cfg-acid" placeholder="ID compte Vantage MT5"></div>
 <button class="btn" onclick="saveApi()" style="background:rgba(245,197,24,.07);color:var(--g);border:1px solid rgba(245,197,24,.18);margin-bottom:8px">🔗 CONNECTER VANTAGE</button>
 <hr>
 <button class="logout-btn" onclick="logout()">🚪 SE DÉCONNECTER</button>
-<div class="ft" style="margin-top:10px">ZYCRYPTO v1.2 · ZYPROZ · 2026</div>
+<div class="ft" style="margin-top:10px">ZYCRYPTO v1.3 · ZYPROZ · 2026</div>
 </div>
 
+<!-- BOTTOM NAV (5 onglets) -->
 <nav class="bnav">
   <button class="bnt a" id="bn1" onclick="sp(1)">📊<span>TRADE</span></button>
-  <button class="bnt" id="bn2" onclick="sp(2)">📈<span>GRAPH</span></button>
-  <button class="bnt" id="bn3" onclick="sp(3)">📋<span>HISTORIQUE</span></button>
-  <button class="bnt" id="bn4" onclick="sp(4)">⚙️<span>COMPTE</span></button>
+  <button class="bnt" id="bn2" onclick="sp(2)">💼<span id="bn2-lbl">EN COURS</span></button>
+  <button class="bnt" id="bn3" onclick="sp(3)">📈<span>GRAPH</span></button>
+  <button class="bnt" id="bn4" onclick="sp(4)">📋<span>HISTORIQUE</span></button>
+  <button class="bnt" id="bn5" onclick="sp(5)">⚙️<span>COMPTE</span></button>
 </nav>
 
 <script>
-const TK=localStorage.getItem('zt'),IS_ADMIN=localStorage.getItem('za')==='1';
+// ── Auth ──────────────────────────────────────────────────────
+const TK=localStorage.getItem('zt'), IS_ADMIN=localStorage.getItem('za')==='1';
 if(!TK){window.location.replace('/');throw 0;}
 
-let cp=1, SEL='BTC';
-const SYMS={BTC:{name:'Bitcoin',icon:'₿',color:'#f5c518'},ETH:{name:'Ethereum',icon:'Ξ',color:'#627eea'},BNB:{name:'BNB',icon:'◈',color:'#f3ba2f'},SOL:{name:'Solana',icon:'◎',color:'#9945ff'},XRP:{name:'Ripple',icon:'✕',color:'#00aae4'},DOGE:{name:'Dogecoin',icon:'Ð',color:'#c2a633'},GOLD:{name:'Or',icon:'🥇',color:'#ffd700'}};
+// ── Symboles ──────────────────────────────────────────────────
+const SYMS={
+  BTC:{name:'Bitcoin',icon:'₿',color:'#f5c518'},
+  ETH:{name:'Ethereum',icon:'Ξ',color:'#627eea'},
+  BNB:{name:'BNB',icon:'◈',color:'#f3ba2f'},
+  SOL:{name:'Solana',icon:'◎',color:'#9945ff'},
+  XRP:{name:'Ripple',icon:'✕',color:'#00aae4'},
+  DOGE:{name:'Dogecoin',icon:'Ð',color:'#c2a633'},
+  GOLD:{name:'Or',icon:'🥇',color:'#ffd700'}
+};
 
-// Afficher éléments admin
-if(IS_ADMIN){document.querySelectorAll('.admin-only').forEach(e=>e.style.display='block');}
+// ── Navigation ────────────────────────────────────────────────
+let cp=1;
+function sp(n){
+  document.querySelectorAll('.pg').forEach(function(p){p.classList.remove('a');});
+  document.querySelectorAll('.bnt').forEach(function(b){b.classList.remove('a');});
+  document.getElementById('p'+n).classList.add('a');
+  document.getElementById('bn'+n).classList.add('a');
+  cp=n;
+  if(n===3)lc();
+  if(n===4)rf4();
+  if(n===5)ls();
+}
 
-// Construire le sélecteur de symboles
-const symRow=document.getElementById('sym-sel');
-Object.entries(SYMS).forEach(([k,v])=>{
-  const b=document.createElement('button');
+// ── Admin ─────────────────────────────────────────────────────
+if(IS_ADMIN){
+  document.querySelectorAll('.admin-only').forEach(function(e){e.style.display='block';});
+}
+
+// ── Symbol selector ───────────────────────────────────────────
+var SEL='BTC';
+var symRow=document.getElementById('sym-sel');
+Object.keys(SYMS).forEach(function(k){
+  var b=document.createElement('button');
   b.className='sym-btn'+(k==='BTC'?' a':'');
-  b.textContent=v.icon+' '+k;
-  b.onclick=()=>{SEL=k;document.querySelectorAll('.sym-btn').forEach(x=>x.classList.remove('a'));b.classList.add('a');document.getElementById('trade-tt').textContent='ORDRES — '+k;};
+  b.textContent=SYMS[k].icon+' '+k;
+  b.onclick=function(){
+    SEL=k;
+    document.querySelectorAll('.sym-btn').forEach(function(x){x.classList.remove('a');});
+    b.classList.add('a');
+    document.getElementById('trade-tt').textContent='ORDRES — '+k;
+  };
   symRow.appendChild(b);
 });
 
-function sp(n){document.querySelectorAll('.pg').forEach(p=>p.classList.remove('a'));document.querySelectorAll('.bnt').forEach(b=>b.classList.remove('a'));document.getElementById('p'+n).classList.add('a');document.getElementById('bn'+n).classList.add('a');cp=n;if(n===2)lc();if(n===3)rf3();if(n===4)ls();}
-const H={'Content-Type':'application/json','Authorization':'Bearer '+TK};
-const ff=n=>{if(n===null||n===undefined||isNaN(n))return'--';if(n>=1000)return n.toLocaleString('fr-FR',{maximumFractionDigits:2});if(n>=1)return n.toFixed(2);return n.toFixed(6);};
-const pc=v=>v>=0?'gg':'rr';const ps=v=>v>=0?'+':'';
-function toast(m,ok=true){const t=document.getElementById('toast');t.textContent=m;t.className='toast '+(ok?'ok':'er')+' sv';setTimeout(()=>t.classList.remove('sv'),2500);}
-async function cmd(c){
-  const sym=SEL;
-  let endpoint=c;
-  if(c==='buy') endpoint='buy_'+sym.toLowerCase();
-  else if(c==='sell') endpoint='sell_'+sym.toLowerCase();
-  else if(c==='close') endpoint='close_'+sym.toLowerCase();
-  try{const r=await fetch('/api/cmd',{method:'POST',headers:H,body:JSON.stringify({cmd:endpoint})});if(r.status===401){window.location.replace('/');return;}
-  const d=await r.json();toast(d.msg||(d.ok?'✅':'❌'),d.ok);setTimeout(rf,400);}catch(e){toast('❌',false);}
+// ── Utils ─────────────────────────────────────────────────────
+var H={'Content-Type':'application/json','Authorization':'Bearer '+TK};
+function ff(n){
+  if(n===null||n===undefined||isNaN(n))return'--';
+  if(n>=1000)return n.toLocaleString('fr-FR',{maximumFractionDigits:2});
+  if(n>=1)return n.toFixed(2);
+  return n.toFixed(6);
 }
-let _prices={};
-async function rf(){
-  try{
-    const r=await fetch('/api/status',{headers:H});if(r.status===401){window.location.replace('/');return;}
-    const d=await r.json();_prices=d.prices||{};
-    document.getElementById('d1').className='dot '+(d.actif?'on':'off');
-    document.getElementById('s1').textContent=d.actif?'🟢 BOT ACTIF — Trading en cours':'🔴 BOT ARRÊTÉ';
-    document.getElementById('bval').textContent=ff(d.balance)+'€';
-    document.getElementById('lv').textContent='x'+d.levier;document.getElementById('ms').textContent=d.mise;
-    // Ticker
-    const tk=document.getElementById('ticker');
-    tk.innerHTML=Object.entries(_prices).map(([sym,price])=>{
-      const s=SYMS[sym]||{};
-      return`<div class="tk" style="--tc:${s.color||'#f5c518'}"><div class="tk-sym">${sym}</div><div class="tk-ico">${s.icon||sym}</div><div class="tk-px">$${ff(price)}</div></div>`;
-    }).join('');
-    // Stats
-    const h=d.trades||[];const w=h.filter(t=>(t.pnl||0)>0).length;const tp=h.reduce((s,t)=>s+(t.pnl||0),0);
-    document.getElementById('nt').textContent=h.length;
-    const we=document.getElementById('wr');we.textContent=h.length?Math.round(w/h.length*100)+'%':'--%';we.className='sn '+(h.length&&w/h.length>=0.5?'gg':'rr');
-    const te=document.getElementById('tps');te.textContent=ps(tp)+tp.toFixed(2)+'€';te.className='sn '+pc(tp);
-    // Positions
-    // Positions EN COURS
-    const pos=d.positions||{};const ks=Object.keys(pos);
-    const pLive=document.getElementById('pos-live');
-    const pCount=document.getElementById('pos-count');
-    if(pCount) pCount.textContent=ks.length>0?`(${ks.length} ouverte${ks.length>1?'s':''})` :'';
-    if(!ks.length){
-      pLive.innerHTML='<div class="np">📭 Aucune position — en attente de signal</div>';
-    } else {
-      pLive.innerHTML=ks.map(sym=>{
-        const p=pos[sym];const cpx=_prices[sym]||0;const e=parseFloat(p.e);
-        const pnl=p.d==='BUY'?parseFloat(p.v)*(cpx-e):parseFloat(p.v)*(e-cpx);
-        const pct=e?((p.d==='BUY'?(cpx-e)/e:(e-cpx)/e)*100):0;
-        const dir=p.d==='BUY'?'lg':'sh';const s2=SYMS[sym]||{};
-        const symLow=sym.toLowerCase();
-        // Barre de progression TP/SL
-        const tp=parseFloat(p.tp); const sl=parseFloat(p.sl);
-        const range=Math.abs(tp-sl);
-        const progress=range>0?Math.min(100,Math.max(0,Math.abs(cpx-sl)/range*100)):50;
-        return`<div class="po ${dir}">
-          <div class="pt">
-            <div class="py">${s2.icon||sym} ${sym}</div>
-            <div style="display:flex;gap:5px;align-items:center">
-              <div class="pd ${dir}">${p.d==='BUY'?'⬆ LONG':'⬇ SHORT'}</div>
-              <button onclick="cmd('close_${symLow}')" style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.35);color:#f87171;border-radius:6px;padding:2px 8px;font-family:'Orbitron',monospace;font-size:7px;cursor:pointer;letter-spacing:1px">✕ FERMER</button>
-            </div>
-          </div>
-          <div class="pr"><span>Entrée <b style="color:#fff">$${ff(e)}</b></span><span>Actuel <b style="color:var(--g)">$${cpx?ff(cpx):'--'}</b></span></div>
-          <div class="pr" style="margin-top:3px">
-            <span style="font-size:9px">Vol: ${p.v}</span>
-            <span class="pp ${pc(pnl)}">${ps(pnl)}${Math.abs(pnl).toFixed(4)}€ <span style="font-size:9px">(${ps(pct)}${Math.abs(pct).toFixed(2)}%)</span></span>
-          </div>
-          <div class="tsl" style="margin-top:4px">
-            <span class="slb">SL $${ff(sl)}</span>
-            <div style="flex:1;height:3px;background:rgba(255,255,255,.08);border-radius:2px;margin:0 4px;position:relative;top:5px">
-              <div style="height:100%;width:${progress}%;background:${pnl>=0?'#22c55e':'#ef4444'};border-radius:2px;transition:.5s"></div>
-            </div>
-            <span class="tpb">TP $${ff(tp)}</span>
-          </div>
-        </div>`;
-      }).join('');
-    }
-    // Compatibilité ancienne var pos (pour closeall)
-    const pE=pLive;
-    document.getElementById('rfi').style.transition='none';document.getElementById('rfi').style.width='100%';
-    setTimeout(()=>{document.getElementById('rfi').style.transition='width 3s linear';document.getElementById('rfi').style.width='0%';},50);
-    if(cp===3)uh(h);
-  }catch(e){}
+function pc(v){return v>=0?'gg':'rr';}
+function ps(v){return v>=0?'+':'';}
+function toast(m,ok){
+  var t=document.getElementById('toast');
+  t.textContent=m;
+  t.className='toast '+(ok?'ok':'er')+' sv';
+  setTimeout(function(){t.classList.remove('sv');},2500);
 }
-function uh(h){
-  const w=h.filter(t=>(t.pnl||0)>0).length;const tp=h.reduce((s,t)=>s+(t.pnl||0),0);
-  document.getElementById('h-t').textContent=h.length;
-  const we=document.getElementById('h-w');we.textContent=w;we.className='hsn '+(w>0?'gg':'');
-  const pe=document.getElementById('h-p');pe.textContent=ps(tp)+tp.toFixed(4)+'€';pe.className='hsn '+pc(tp);
-  const le=document.getElementById('hl');
-  if(!h.length){le.innerHTML='<div class="np">Aucun trade · Sauvegardé dans le cloud</div>';return;}
-  le.innerHTML=h.map(t=>{
-    const s2=SYMS[t.s]||{};const dt=t.ts?new Date(t.ts).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
-    return`<div class="hi"><div><div class="his">${s2.icon||t.s} ${t.s} ${t.d==='BUY'?'🟢 LONG':'🔴 SHORT'}</div>
-    <div class="hid">${t.r||''} · ${dt}</div>
-    <div class="hid">$${ff(t.e||0)} → $${ff(t.x||0)}</div></div>
-    <div class="hip ${pc(t.pnl||0)}">${ps(t.pnl||0)}${Math.abs(t.pnl||0).toFixed(4)}€</div></div>`;
-  }).join('');
+
+// ── Commandes API ─────────────────────────────────────────────
+function cmd(c){
+  fetch('/api/cmd',{method:'POST',headers:H,body:JSON.stringify({cmd:c})})
+    .then(function(r){if(r.status===401){window.location.replace('/');return null;}return r.json();})
+    .then(function(d){if(!d)return;toast(d.msg||(d.ok?'OK':'Erreur'),d.ok);setTimeout(rf,400);})
+    .catch(function(){toast('Erreur réseau',false);});
 }
-async function rf3(){try{const d=await fetch('/api/status',{headers:H}).then(r=>r.json());uh(d.trades||[]);}catch(e){}}
-async function ls(){
-  try{const d=await fetch('/api/me',{headers:H}).then(r=>r.json());if(!d.ok)return;
-  const u=d.user;
-  document.getElementById('u-name').textContent=u.username;document.getElementById('u-email').textContent=u.email;
-  document.getElementById('cfg-l').value=u.levier;document.getElementById('cfg-m').value=u.mise;
-  document.getElementById('cfg-tp').value=u.tp;document.getElementById('cfg-sl').value=u.sl;
-  document.getElementById('cfg-meta').value=u.meta_token||'';document.getElementById('cfg-acid').value=u.account_id||'';
-  if(u.is_admin){const ab=document.getElementById('adbg');if(ab)ab.style.display='inline-block';}}catch(e){}
+
+function trade(action){
+  // action: 'buy', 'sell', 'close'
+  var c=action+'_'+SEL.toLowerCase();
+  cmd(c);
 }
-async function saveSettings(){
-  const b={levier:parseInt(document.getElementById('cfg-l').value),mise:parseFloat(document.getElementById('cfg-m').value),tp:parseFloat(document.getElementById('cfg-tp').value),sl:parseFloat(document.getElementById('cfg-sl').value)};
-  const d=await fetch('/api/settings',{method:'POST',headers:H,body:JSON.stringify(b)}).then(r=>r.json());
-  toast(d.msg||(d.ok?'✅ Sauvegardé':'❌'),d.ok);
+
+// ── Données globales ──────────────────────────────────────────
+var _prices={};
+var _positions={};
+
+// ── Refresh principal ─────────────────────────────────────────
+function rf(){
+  fetch('/api/status',{headers:H})
+    .then(function(r){if(r.status===401){window.location.replace('/');return null;}return r.json();})
+    .then(function(d){
+      if(!d||!d.ok)return;
+
+      // Prix
+      _prices=d.prices||{};
+      _positions=d.positions||{};
+
+      // Status dot
+      var actif=d.actif||false;
+      document.getElementById('d1').className='dot '+(actif?'on':'off');
+      document.getElementById('s1').textContent=actif?'🟢 BOT ACTIF — Trading en cours':'🔴 BOT ARRÊTÉ';
+      document.getElementById('d2').className='dot '+(actif?'on':'off');
+      document.getElementById('s2').textContent=actif?'BOT ACTIF':'BOT ARRÊTÉ';
+
+      // Balance
+      document.getElementById('bval').textContent=ff(d.balance)+'€';
+      document.getElementById('lv').textContent='x'+d.levier;
+      document.getElementById('ms').textContent=d.mise;
+
+      // Ticker
+      var tk=document.getElementById('ticker');
+      var html='';
+      Object.keys(_prices).forEach(function(sym){
+        var s=SYMS[sym]||{icon:sym};
+        html+='<div class="tk"><div class="tk-s">'+sym+'</div><div class="tk-i">'+s.icon+'</div><div class="tk-p">$'+ff(_prices[sym])+'</div></div>';
+      });
+      tk.innerHTML=html;
+
+      // Stats
+      var trades=d.trades||[];
+      var wins=trades.filter(function(t){return(t.pnl||0)>0;}).length;
+      var totalPnl=trades.reduce(function(s,t){return s+(t.pnl||0);},0);
+      document.getElementById('nt').textContent=trades.length;
+      var wrEl=document.getElementById('wr');
+      wrEl.textContent=trades.length?Math.round(wins/trades.length*100)+'%':'--%';
+      wrEl.className='sn '+(trades.length&&wins/trades.length>=0.5?'gg':'rr');
+      var tpEl=document.getElementById('tps');
+      tpEl.textContent=ps(totalPnl)+totalPnl.toFixed(2)+'€';
+      tpEl.className='sn '+pc(totalPnl);
+
+      // Badge EN COURS
+      var posCount=Object.keys(_positions).length;
+      var lbl=document.getElementById('bn2-lbl');
+      if(lbl) lbl.innerHTML='EN COURS'+(posCount>0?'<span class="badge-count">'+posCount+'</span>':'');
+
+      // Render positions (page 2)
+      renderPositions();
+
+      // Refresh bar
+      var rfi=document.getElementById('rfi');
+      var rfi2=document.getElementById('rfi2');
+      [rfi,rfi2].forEach(function(el){
+        if(!el)return;
+        el.style.transition='none';el.style.width='100%';
+        setTimeout(function(){el.style.transition='width 3s linear';el.style.width='0%';},50);
+      });
+
+      if(cp===4) rf4data(trades);
+    })
+    .catch(function(){});
 }
-async function saveApi(){
-  const b={meta_token:document.getElementById('cfg-meta').value,account_id:document.getElementById('cfg-acid').value};
-  const d=await fetch('/api/apikeys',{method:'POST',headers:H,body:JSON.stringify(b)}).then(r=>r.json());
-  toast(d.msg||(d.ok?'✅':'❌'),d.ok);
-}
-function logout(){localStorage.clear();window.location.replace('/');}
-let chart=null,cs=null,cT='5m';
-function setTf(tf){cT=tf;['1m','5m','15m','1h'].forEach(x=>document.getElementById('fb-'+x).classList.toggle('a',x===tf));lc();}
-function lc(){
-  const cSym=document.getElementById('ch-sym')?.value||'BTC';
-  const con=document.getElementById('chc');
-  if(!chart){
-    chart=LightweightCharts.createChart(con,{width:con.clientWidth,height:350,layout:{background:{color:'#07070a'},textColor:'rgba(255,255,255,0.3)'},grid:{vertLines:{color:'rgba(245,197,24,0.03)'},horzLines:{color:'rgba(245,197,24,0.03)'}},crosshair:{mode:LightweightCharts.CrosshairMode.Normal},rightPriceScale:{borderColor:'rgba(245,197,24,0.08)'},timeScale:{borderColor:'rgba(245,197,24,0.08)',timeVisible:true}});
-    cs=chart.addCandlestickSeries({upColor:'#22c55e',downColor:'#ef4444',borderUpColor:'#22c55e',borderDownColor:'#ef4444',wickUpColor:'#22c55e',wickDownColor:'#ef4444'});
-    chart.subscribeCrosshairMove(p=>{if(p.seriesData&&p.seriesData.size>0){const cd=p.seriesData.values().next().value;if(cd){document.getElementById('co').textContent='$'+cd.open.toFixed(4);document.getElementById('ch').textContent='$'+cd.high.toFixed(4);document.getElementById('cl').textContent='$'+cd.low.toFixed(4);document.getElementById('cc').textContent='$'+cd.close.toFixed(4);}}});
+
+// ── Rendu des positions (page EN COURS) ───────────────────────
+function renderPositions(){
+  var container=document.getElementById('pos-container');
+  if(!container)return;
+  var ks=Object.keys(_positions);
+  if(!ks.length){
+    container.innerHTML='<div class="np">📭 Aucune position ouverte<br><span style="font-size:10px;color:rgba(255,255,255,.1)">Utilise LONG ou SHORT dans TRADE</span></div>';
+    return;
   }
-  fetch(`/api/ohlc?s=${cSym}&tf=${cT}`,{headers:H}).then(r=>r.json()).then(data=>{
-    if(data&&data.length){cs.setData(data.map(c=>({time:c.t,open:c.o,high:c.h,low:c.l,close:c.c})));chart.timeScale().fitContent();const l=data[data.length-1];document.getElementById('co').textContent='$'+l.o.toFixed(4);document.getElementById('ch').textContent='$'+l.h.toFixed(4);document.getElementById('cl').textContent='$'+l.l.toFixed(4);document.getElementById('cc').textContent='$'+l.c.toFixed(4);}
-  }).catch(()=>{});
+  var html='';
+  ks.forEach(function(sym){
+    var p=_positions[sym];
+    var cpx=_prices[sym]||0;
+    var e=parseFloat(p.e)||0;
+    var v=parseFloat(p.v)||0;
+    var tp=parseFloat(p.tp)||0;
+    var sl=parseFloat(p.sl)||0;
+    var pnl=0;
+    if(p.d==='BUY') pnl=v*(cpx-e);
+    else pnl=v*(e-cpx);
+    var pct=e?((p.d==='BUY'?(cpx-e)/e:(e-cpx)/e)*100):0;
+    var dir=p.d==='BUY'?'lg':'sh';
+    var sInfo=SYMS[sym]||{icon:sym,name:sym};
+    var clr=pnl>=0?'#22c55e':'#ef4444';
+    // Barre progression
+    var range=Math.abs(tp-sl);
+    var prog=range>0?Math.min(100,Math.max(0,Math.abs((cpx-sl)/range)*100)):50;
+
+    html+='<div class="po '+dir+'">';
+    html+='<div class="po-top">';
+    html+='<div class="po-sym">'+sInfo.icon+' '+sym+'</div>';
+    html+='<div class="po-dir '+dir+'">'+(p.d==='BUY'?'⬆ LONG':'⬇ SHORT')+'</div>';
+    html+='</div>';
+    html+='<div class="po-pnl" style="color:'+clr+'">'+ps(pnl)+pnl.toFixed(4)+'€ <span style="font-size:11px;opacity:.7">('+ps(pct)+pct.toFixed(2)+'%)</span></div>';
+    html+='<div class="po-row"><span>Entrée <b style="color:#fff">$'+ff(e)+'</b></span><span>Actuel <b style="color:var(--g)">$'+ff(cpx)+'</b></span></div>';
+    html+='<div class="po-row" style="margin-bottom:6px"><span>Volume: '+v+'</span><span>TP: $'+ff(tp)+' · SL: $'+ff(sl)+'</span></div>';
+    html+='<div class="po-bar"><div class="po-bar-fill" style="width:'+prog+'%;background:'+clr+'"></div></div>';
+    html+='<div class="po-labels"><span style="color:#ef4444">SL $'+ff(sl)+'</span><span style="color:#22c55e">TP $'+ff(tp)+'</span></div>';
+    html+='<button class="po-close-btn" onclick="closePos(\''+sym+'\')">✕ FERMER '+sym+'</button>';
+    html+='</div>';
+  });
+  container.innerHTML=html;
 }
-rf();setInterval(()=>{if(cp===1||cp===3)rf();},3000);setInterval(()=>{if(cp===2)lc();},10000);
+
+function closePos(sym){
+  cmd('close_'+sym.toLowerCase());
+}
+
+// ── Historique ────────────────────────────────────────────────
+function rf4(){
+  fetch('/api/status',{headers:H}).then(function(r){return r.json();}).then(function(d){rf4data(d.trades||[]);}).catch(function(){});
+}
+function rf4data(trades){
+  var wins=trades.filter(function(t){return(t.pnl||0)>0;}).length;
+  var tot=trades.reduce(function(s,t){return s+(t.pnl||0);},0);
+  document.getElementById('h-t').textContent=trades.length;
+  var wEl=document.getElementById('h-w');wEl.textContent=wins;wEl.className='hsn '+(wins>0?'gg':'');
+  var pEl=document.getElementById('h-p');pEl.textContent=ps(tot)+tot.toFixed(4)+'€';pEl.className='hsn '+pc(tot);
+  var le=document.getElementById('hl');
+  if(!trades.length){le.innerHTML='<div class="np">Aucun trade fermé</div>';return;}
+  var html='';
+  trades.forEach(function(t){
+    var s=SYMS[t.s]||{icon:t.s};
+    var dt=t.ts?new Date(t.ts).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+    var pnl=t.pnl||0;
+    html+='<div class="hi"><div><div class="his">'+s.icon+' '+t.s+' '+(t.d==='BUY'?'🟢 LONG':'🔴 SHORT')+'</div>';
+    html+='<div class="hid">'+(t.r||'')+' · '+dt+'</div>';
+    html+='<div class="hid">$'+ff(t.e||0)+' → $'+ff(t.x||0)+'</div></div>';
+    html+='<div class="hip '+pc(pnl)+'">'+ps(pnl)+Math.abs(pnl).toFixed(4)+'€</div></div>';
+  });
+  le.innerHTML=html;
+}
+
+// ── Settings ──────────────────────────────────────────────────
+function ls(){
+  fetch('/api/me',{headers:H}).then(function(r){return r.json();}).then(function(d){
+    if(!d.ok){window.location.replace('/');return;}
+    var u=d.user;
+    document.getElementById('u-name').textContent=u.username;
+    document.getElementById('u-email').textContent=u.email;
+    document.getElementById('cfg-l').value=u.levier;
+    document.getElementById('cfg-m').value=u.mise;
+    document.getElementById('cfg-tp').value=u.tp;
+    document.getElementById('cfg-sl').value=u.sl;
+    document.getElementById('cfg-meta').value=u.meta_token||'';
+    document.getElementById('cfg-acid').value=u.account_id||'';
+    if(u.is_admin){var ab=document.getElementById('adbg');if(ab)ab.style.display='inline-block';}
+  }).catch(function(){});
+}
+
+function saveSettings(){
+  var body={
+    levier:parseInt(document.getElementById('cfg-l').value),
+    mise:parseFloat(document.getElementById('cfg-m').value),
+    tp:parseFloat(document.getElementById('cfg-tp').value),
+    sl:parseFloat(document.getElementById('cfg-sl').value)
+  };
+  fetch('/api/settings',{method:'POST',headers:H,body:JSON.stringify(body)})
+    .then(function(r){return r.json();})
+    .then(function(d){toast(d.msg||(d.ok?'Sauvegardé':'Erreur'),d.ok);})
+    .catch(function(){});
+}
+
+function saveApi(){
+  var body={meta_token:document.getElementById('cfg-meta').value,account_id:document.getElementById('cfg-acid').value};
+  fetch('/api/apikeys',{method:'POST',headers:H,body:JSON.stringify(body)})
+    .then(function(r){return r.json();})
+    .then(function(d){toast(d.msg||(d.ok?'Clés sauvegardées':'Erreur'),d.ok);})
+    .catch(function(){});
+}
+
+function logout(){localStorage.clear();window.location.replace('/');}
+
+// ── Graphique ─────────────────────────────────────────────────
+var chart=null, cs=null, cT='5m';
+function setTf(tf){cT=tf;['1m','5m','15m','1h'].forEach(function(x){document.getElementById('fb-'+x).classList.toggle('a',x===tf);});lc();}
+function lc(){
+  var cSym=document.getElementById('ch-sym').value||'BTC';
+  var con=document.getElementById('chc');
+  if(!chart){
+    chart=LightweightCharts.createChart(con,{width:con.clientWidth,height:350,
+      layout:{background:{color:'#07070a'},textColor:'rgba(255,255,255,0.3)'},
+      grid:{vertLines:{color:'rgba(245,197,24,0.03)'},horzLines:{color:'rgba(245,197,24,0.03)'}},
+      crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
+      rightPriceScale:{borderColor:'rgba(245,197,24,0.08)'},
+      timeScale:{borderColor:'rgba(245,197,24,0.08)',timeVisible:true}});
+    cs=chart.addCandlestickSeries({upColor:'#22c55e',downColor:'#ef4444',borderUpColor:'#22c55e',borderDownColor:'#ef4444',wickUpColor:'#22c55e',wickDownColor:'#ef4444'});
+    chart.subscribeCrosshairMove(function(p){
+      if(p.seriesData&&p.seriesData.size>0){
+        var cd=p.seriesData.values().next().value;
+        if(cd){document.getElementById('co').textContent='$'+cd.open.toFixed(2);document.getElementById('ch').textContent='$'+cd.high.toFixed(2);document.getElementById('cl').textContent='$'+cd.low.toFixed(2);document.getElementById('cc').textContent='$'+cd.close.toFixed(2);}
+      }
+    });
+  }
+  fetch('/api/ohlc?s='+cSym+'&tf='+cT,{headers:H}).then(function(r){return r.json();}).then(function(data){
+    if(data&&data.length){
+      cs.setData(data.map(function(c){return{time:c.t,open:c.o,high:c.h,low:c.l,close:c.c};}));
+      chart.timeScale().fitContent();
+      var l=data[data.length-1];
+      document.getElementById('co').textContent='$'+l.o.toFixed(2);
+      document.getElementById('ch').textContent='$'+l.h.toFixed(2);
+      document.getElementById('cl').textContent='$'+l.l.toFixed(2);
+      document.getElementById('cc').textContent='$'+l.c.toFixed(2);
+    }
+  }).catch(function(){});
+}
+
+// ── Auto-refresh ──────────────────────────────────────────────
+rf();
+setInterval(function(){if(cp===1||cp===2||cp===4)rf();},3000);
+setInterval(function(){if(cp===3)lc();},10000);
 </script></body></html>"""
 
-# ══════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════
 #   HTTP SERVER
-# ══════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════
 class H(BaseHTTPRequestHandler):
     def log_message(self,*a): pass
     def sj(self,d,c=200):
@@ -838,14 +993,14 @@ class H(BaseHTTPRequestHandler):
             self.sj({"ok":True,"actif":bot_on,"balance":round(float(u["balance"]),2),"levier":u["levier"],"mise":u["mise"],"prices":prices,"positions":pos,"trades":trades})
         elif p=="/api/admin/topup":
             u=au(self.tok())
-            if not u or not u.get("is_admin"): self.sj({"ok":False,"error":"Admin requis"},403);return
+            if not u or not u.get("is_admin"): self.sj({"ok":False},403);return
             target=body.get("target",""); amount=float(body.get("amount",0))
-            if not target or amount<=0: self.sj({"ok":False,"error":"Parametres invalides"});return
+            if not target or amount<=0: self.sj({"ok":False,"error":"Params invalides"});return
             found=None
             for uid2,usr in DB._data["users"].items():
                 if usr.get("username","").lower()==target.lower() or usr.get("email","").lower()==target.lower():
                     found=(uid2,usr); break
-            if not found: self.sj({"ok":False,"error":f"Utilisateur '{target}' introuvable"});return
+            if not found: self.sj({"ok":False,"error":f"User '{target}' introuvable"});return
             fuid,fusr=found
             old_bal=float(fusr.get("balance",0))
             DB.update_user(fuid,{"balance":round(old_bal+amount,2)})
@@ -853,11 +1008,11 @@ class H(BaseHTTPRequestHandler):
         elif p=="/api/admin/reload":
             u=au(self.tok())
             if not u or not u.get("is_admin"): self.sj({"ok":False},403);return
-            DB.load(); self.sj({"ok":True,"msg":"DB rechargee depuis GitHub"})
+            DB.load(); self.sj({"ok":True,"msg":"DB rechargee"})
         elif p=="/api/admin/users":
             u=au(self.tok())
             if not u or not u.get("is_admin"): self.sj({"ok":False},403);return
-            users=[{"username":usr["username"],"email":usr["email"],"balance":usr["balance"]} 
+            users=[{"username":usr["username"],"email":usr["email"],"balance":usr["balance"]}
                    for usr in DB._data["users"].values()]
             self.sj({"ok":True,"users":users})
         elif p=="/api/ohlc":
@@ -891,7 +1046,7 @@ class H(BaseHTTPRequestHandler):
         elif p=="/api/settings":
             u=au(self.tok())
             if not u: self.sj({"ok":False},401);return
-            DB.update_user(u["id"],{"levier":int(body.get("levier",200)),"mise":float(body.get("mise",10)),"tp":float(body.get("tp",2.0)),"sl":float(body.get("sl",2.0))})
+            DB.update_user(u["id"],{"levier":int(body.get("levier",200)),"mise":float(body.get("mise",10)),"tp":float(body.get("tp",1.0)),"sl":float(body.get("sl",0.3))})
             self.sj({"ok":True,"msg":"✅ Paramètres sauvegardés dans le cloud"})
 
         elif p=="/api/apikeys":
@@ -913,20 +1068,15 @@ class H(BaseHTTPRequestHandler):
                 else: msg="⏹ Bot arrêté"
 
             elif c=="closeall":
-                # Fermer tout sans besoin de symbole
                 pos=DB.get_positions(uid);tot=0
                 if pos:
                     for sk in list(pos.keys()):
-                        cp=get_price(sk) or float(pos[sk]["e"])
-                        pnl=close_trade(uid,sk,cp,"🔒 Fermer tout")
+                        pnl=close_trade(uid,sk,get_price(sk) or float(pos[sk]["e"]),"🔒 Fermer tout")
                         if pnl is not None: tot+=pnl
                     u2=DB.get_by_id(uid)
                     msg=f"🔒 Tout fermé | {tot:+.4f}€ | Solde: {u2['balance']:.2f}€"
-                    tg(f"🔒 *Tout fermé* ({u['username']}) | `{tot:+.4f}€`")
                 else: ok=False;msg="Rien à fermer"
-
             else:
-                # Détecter le symbole depuis la commande
                 sym=None
                 for s in SYMBOLS:
                     if s.lower() in c: sym=s; break
@@ -934,34 +1084,34 @@ class H(BaseHTTPRequestHandler):
 
                 if "buy" in c or "long" in c:
                     price=get_price(sym)
-                    if price and price>0:
+                    if price:
                         t=open_trade(uid,sym,"BUY",price)
-                        if t:
-                            msg=f"🟢 LONG {SYMBOLS[sym]['icon']} {sym} @ ${price:.4f}"
-                            tg(f"⚡ *{msg}* ({u['username']})")
+                        if t: msg=f"🟢 LONG {SYMBOLS[sym]['icon']} {sym} @ ${price:.4f}";tg(f"⚡ *{msg}* ({u['username']})")
                         else: ok=False;msg="❌ Solde insuffisant"
                     else: ok=False;msg="❌ Prix indisponible"
 
                 elif "sell" in c or "short" in c:
                     price=get_price(sym)
-                    if price and price>0:
+                    if price:
                         t=open_trade(uid,sym,"SELL",price)
-                        if t:
-                            msg=f"🔴 SHORT {SYMBOLS[sym]['icon']} {sym} @ ${price:.4f}"
-                            tg(f"⚡ *{msg}* ({u['username']})")
+                        if t: msg=f"🔴 SHORT {SYMBOLS[sym]['icon']} {sym} @ ${price:.4f}";tg(f"⚡ *{msg}* ({u['username']})")
                         else: ok=False;msg="❌ Solde insuffisant"
                     else: ok=False;msg="❌ Prix indisponible"
 
-                elif "close" in c:
+                elif "close" in c and "all" not in c:
                     price=get_price(sym)
-                    if price and price>0:
-                        pnl=close_trade(uid,sym,price,"🔒 Fermeture manuelle")
-                        if pnl is not None:
-                            u2=DB.get_by_id(uid)
-                            msg=f"🔒 {sym} fermé | {pnl:+.4f}€ | Solde: {u2['balance']:.2f}€"
-                            tg(f"🔒 *{sym}* ({u['username']}) | `{pnl:+.4f}€`")
-                        else: ok=False;msg=f"Pas de position {sym}"
-                    else: ok=False;msg="❌ Prix indisponible"
+                    pnl=close_trade(uid,sym,price,"🔒 Fermeture manuelle")
+                    if pnl is not None:
+                        u2=DB.get_by_id(uid);msg=f"🔒 {sym} fermé | {pnl:+.4f}€ | Solde: {u2['balance']:.2f}€"
+                    else: ok=False;msg=f"Pas de position {sym}"
+
+                elif "closeall" in c:
+                    pos=DB.get_positions(uid);tot=0
+                    for sk in list(pos.keys()):
+                        pnl=close_trade(uid,sk,get_price(sk) or float(pos[sk]["e"]),"🔒 Fermer tout")
+                        if pnl: tot+=pnl
+                    if pos: msg=f"🔒 Tout fermé | {tot:+.4f}€"
+                    else: ok=False;msg="Rien à fermer"
 
             self.sj({"ok":ok,"msg":msg})
         else: self.send_response(404);self.end_headers()
