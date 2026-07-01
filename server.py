@@ -11,7 +11,13 @@ PORT        = int(os.environ.get("PORT", 8000))
 SECRET_KEY  = os.environ.get("SECRET_KEY", "zyproz-zycrypto-2026-xK9mP2qR")
 TG_TOKEN    = os.environ.get("TG_TOKEN",  "8858889412:AAElLpyQCIqw3PIYeAJtxeH56DQgXBUn6Ls")
 TG_ADMIN_ID = int(os.environ.get("TG_ADMIN", "5354522228"))
-TG_GROUP_ID  = os.environ.get("TG_GROUP_ID", "")  # ID du groupe Telegram (optionnel)
+TG_GROUP_ID  = os.environ.get("TG_GROUP_ID", "")
+BOT_COOLDOWN = int(os.environ.get("BOT_COOLDOWN", "300"))
+# ── MetaAPI — Vantage Markets (vrai argent) ────────────────────
+META_TOKEN   = os.environ.get("META_TOKEN",   "")
+META_ACCOUNT = os.environ.get("META_ACCOUNT", "c2ee22ce-f12a-4168-afba-57b749eb30c3")
+META_REGION  = os.environ.get("META_REGION",  "new-york")  # new-york|london|singapore
+REAL_TRADING = os.environ.get("REAL_TRADING", "0") == "1"  # 0=DEMO, 1=RÉELam (optionnel)
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "ugo.scule@gmail.com").lower()
 GH_TOKEN    = os.environ.get("GH_TOKEN",  "")
 DB_REPO     = os.environ.get("DB_REPO",   "zycrypto-db")
@@ -20,13 +26,57 @@ DB_PATH     = "/tmp/zycrypto.db"
 
 # ── Symboles ──────────────────────────────────────────────────
 SYMBOLS = {
-    "BTC":  {"name":"Bitcoin",  "icon":"₿",  "pair":"BTCUSDT",  "color":"#f5c518"},
-    "ETH":  {"name":"Ethereum", "icon":"Ξ",  "pair":"ETHUSDT",  "color":"#627eea"},
-    "BNB":  {"name":"BNB",      "icon":"◈",  "pair":"BNBUSDT",  "color":"#f3ba2f"},
-    "SOL":  {"name":"Solana",   "icon":"◎",  "pair":"SOLUSDT",  "color":"#9945ff"},
-    "XRP":  {"name":"Ripple",   "icon":"✕",  "pair":"XRPUSDT",  "color":"#00aae4"},
-    "DOGE": {"name":"Dogecoin", "icon":"Ð",  "pair":"DOGEUSDT", "color":"#c2a633"},
-    "GOLD": {"name":"Or",       "icon":"🥇", "pair":"PAXGUSDT", "color":"#ffd700"},
+    # ── CRYPTO (Binance) ────────────────────────────────────────
+    "BTC":    {"name":"Bitcoin",      "icon":"₿",   "type":"CRYPTO","src":"binance","pair":"BTCUSDT",   "color":"#f5c518"},
+    "ETH":    {"name":"Ethereum",     "icon":"Ξ",   "type":"CRYPTO","src":"binance","pair":"ETHUSDT",   "color":"#627eea"},
+    "BNB":    {"name":"BNB",          "icon":"◈",   "type":"CRYPTO","src":"binance","pair":"BNBUSDT",   "color":"#f3ba2f"},
+    "SOL":    {"name":"Solana",       "icon":"◎",   "type":"CRYPTO","src":"binance","pair":"SOLUSDT",   "color":"#9945ff"},
+    "XRP":    {"name":"Ripple",       "icon":"✕",   "type":"CRYPTO","src":"binance","pair":"XRPUSDT",   "color":"#00aae4"},
+    "DOGE":   {"name":"Dogecoin",     "icon":"Ð",   "type":"CRYPTO","src":"binance","pair":"DOGEUSDT",  "color":"#c2a633"},
+    "ADA":    {"name":"Cardano",      "icon":"₳",   "type":"CRYPTO","src":"binance","pair":"ADAUSDT",   "color":"#0033ad"},
+    "LTC":    {"name":"Litecoin",     "icon":"Ł",   "type":"CRYPTO","src":"binance","pair":"LTCUSDT",   "color":"#bfbbbb"},
+    "DOT":    {"name":"Polkadot",     "icon":"●",   "type":"CRYPTO","src":"binance","pair":"DOTUSDT",   "color":"#e6007a"},
+    "LINK":   {"name":"Chainlink",    "icon":"⬡",   "type":"CRYPTO","src":"binance","pair":"LINKUSDT",  "color":"#2a5ada"},
+    "AVAX":   {"name":"Avalanche",    "icon":"🔺",  "type":"CRYPTO","src":"binance","pair":"AVAXUSDT",  "color":"#e84142"},
+    "MATIC":  {"name":"Polygon",      "icon":"⬟",   "type":"CRYPTO","src":"binance","pair":"MATICUSDT", "color":"#8247e5"},
+    "UNI":    {"name":"Uniswap",      "icon":"🦄",  "type":"CRYPTO","src":"binance","pair":"UNIUSDT",   "color":"#ff007a"},
+    "ATOM":   {"name":"Cosmos",       "icon":"⚛",   "type":"CRYPTO","src":"binance","pair":"ATOMUSDT",  "color":"#2e3148"},
+    "NEAR":   {"name":"NEAR",         "icon":"Ν",   "type":"CRYPTO","src":"binance","pair":"NEARUSDT",  "color":"#00c08b"},
+    # ── MÉTAUX (Yahoo Finance) ──────────────────────────────────
+    "GOLD":   {"name":"Or",           "icon":"🥇",  "type":"METAL", "src":"yahoo",  "pair":"XAUUSD=X",  "color":"#ffd700"},
+    "SILVER": {"name":"Argent",       "icon":"🥈",  "type":"METAL", "src":"yahoo",  "pair":"XAGUSD=X",  "color":"#c0c0c0"},
+    "PLAT":   {"name":"Platine",      "icon":"💿",  "type":"METAL", "src":"yahoo",  "pair":"XPTUSD=X",  "color":"#e5e4e2"},
+    "COPPER": {"name":"Cuivre",       "icon":"🔶",  "type":"METAL", "src":"yahoo",  "pair":"HG=F",       "color":"#b87333"},
+    # ── FOREX MAJEURS (Yahoo Finance) ───────────────────────────
+    "EURUSD": {"name":"EUR/USD",      "icon":"€$",  "type":"FOREX", "src":"yahoo",  "pair":"EURUSD=X",  "color":"#003399"},
+    "GBPUSD": {"name":"GBP/USD",      "icon":"£$",  "type":"FOREX", "src":"yahoo",  "pair":"GBPUSD=X",  "color":"#012169"},
+    "USDJPY": {"name":"USD/JPY",      "icon":"$¥",  "type":"FOREX", "src":"yahoo",  "pair":"USDJPY=X",  "color":"#bc002d"},
+    "USDCHF": {"name":"USD/CHF",      "icon":"$Fr", "type":"FOREX", "src":"yahoo",  "pair":"USDCHF=X",  "color":"#ff0000"},
+    "AUDUSD": {"name":"AUD/USD",      "icon":"A$",  "type":"FOREX", "src":"yahoo",  "pair":"AUDUSD=X",  "color":"#00843d"},
+    "USDCAD": {"name":"USD/CAD",      "icon":"C$",  "type":"FOREX", "src":"yahoo",  "pair":"USDCAD=X",  "color":"#ff0000"},
+    "NZDUSD": {"name":"NZD/USD",      "icon":"NZ$", "type":"FOREX", "src":"yahoo",  "pair":"NZDUSD=X",  "color":"#00247d"},
+    "EURGBP": {"name":"EUR/GBP",      "icon":"€£",  "type":"FOREX", "src":"yahoo",  "pair":"EURGBP=X",  "color":"#003399"},
+    "EURJPY": {"name":"EUR/JPY",      "icon":"€¥",  "type":"FOREX", "src":"yahoo",  "pair":"EURJPY=X",  "color":"#003399"},
+    "GBPJPY": {"name":"GBP/JPY",      "icon":"£¥",  "type":"FOREX", "src":"yahoo",  "pair":"GBPJPY=X",  "color":"#012169"},
+    # ── INDICES (Yahoo Finance) ──────────────────────────────────
+    "US500":  {"name":"S&P 500",      "icon":"📊",  "type":"INDEX", "src":"yahoo",  "pair":"^GSPC",      "color":"#1a56db"},
+    "US100":  {"name":"NASDAQ 100",   "icon":"💻",  "type":"INDEX", "src":"yahoo",  "pair":"^NDX",       "color":"#7e3af2"},
+    "US30":   {"name":"Dow Jones",    "icon":"🏛",  "type":"INDEX", "src":"yahoo",  "pair":"^DJI",       "color":"#1c64f2"},
+    "DE40":   {"name":"DAX",          "icon":"🇩🇪", "type":"INDEX", "src":"yahoo",  "pair":"^GDAXI",     "color":"#000000"},
+    "UK100":  {"name":"FTSE 100",     "icon":"🇬🇧", "type":"INDEX", "src":"yahoo",  "pair":"^FTSE",      "color":"#012169"},
+    "JP225":  {"name":"Nikkei 225",   "icon":"🗻",  "type":"INDEX", "src":"yahoo",  "pair":"^N225",      "color":"#bc002d"},
+    "FR40":   {"name":"CAC 40",       "icon":"🇫🇷", "type":"INDEX", "src":"yahoo",  "pair":"^FCHI",      "color":"#0055a4"},
+    # ── ETF (Yahoo Finance) ──────────────────────────────────────
+    "SPY":    {"name":"S&P 500 ETF",  "icon":"🕵",  "type":"ETF",   "src":"yahoo",  "pair":"SPY",        "color":"#1a56db"},
+    "QQQ":    {"name":"NASDAQ ETF",   "icon":"📱",  "type":"ETF",   "src":"yahoo",  "pair":"QQQ",        "color":"#7e3af2"},
+    "GLD":    {"name":"Gold ETF",     "icon":"🏅",  "type":"ETF",   "src":"yahoo",  "pair":"GLD",        "color":"#ffd700"},
+    # ── MATIÈRES PREMIÈRES (Yahoo Finance) ──────────────────────
+    "OIL":    {"name":"Pétrole WTI",  "icon":"🛢",  "type":"COMM",  "src":"yahoo",  "pair":"CL=F",       "color":"#1e1e1e"},
+    "BRENT":  {"name":"Pétrole Brent","icon":"⛽",  "type":"COMM",  "src":"yahoo",  "pair":"BZ=F",       "color":"#333333"},
+    "NATGAS": {"name":"Gaz Naturel",  "icon":"🔥",  "type":"COMM",  "src":"yahoo",  "pair":"NG=F",       "color":"#ff6b35"},
+    "WHEAT":  {"name":"Blé",          "icon":"🌾",  "type":"COMM",  "src":"yahoo",  "pair":"ZW=F",       "color":"#d4a017"},
+    "CORN":   {"name":"Maïs",         "icon":"🌽",  "type":"COMM",  "src":"yahoo",  "pair":"ZC=F",       "color":"#f5c518"},
+    "COFFEE": {"name":"Café",         "icon":"☕",  "type":"COMM",  "src":"yahoo",  "pair":"KC=F",       "color":"#4a2c2a"},
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -484,53 +534,301 @@ def create_admin_if_missing():
 # ══════════════════════════════════════════════════════════════
 _pc={}; _pt={}
 
-def get_price(sym):
-    if sym in _pc and time.time()-_pt.get(sym,0)<4: return _pc[sym]
+_YF_HDR = {"User-Agent":"Mozilla/5.0 (compatible; ZyCrypto/2.0)"}
+
+def get_yahoo_price(ticker):
+    """Prix via Yahoo Finance (forex, métaux, indices, ETF, matières)."""
     try:
-        pair = SYMBOLS.get(sym,{}).get("pair","BTCUSDT")
-        v = float(requests.get(f"https://api.binance.com/api/v3/ticker/price?symbol={pair}",
-                               timeout=5).json()["price"])
-        _pc[sym]=v; _pt[sym]=time.time(); return v
-    except: return _pc.get(sym,0)
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
+        r = requests.get(url, headers=_YF_HDR, timeout=8)
+        return float(r.json()["chart"]["result"][0]["meta"]["regularMarketPrice"])
+    except: return 0
+
+def get_price(sym):
+    """Prix universel — cache 5s. Binance pour crypto, Yahoo pour le reste."""
+    if sym in _pc and time.time()-_pt.get(sym,0)<5: return _pc[sym]
+    info = SYMBOLS.get(sym, {})
+    src  = info.get("src", "binance")
+    pair = info.get("pair", sym+"USDT")
+    try:
+        if src == "binance":
+            v = float(requests.get(
+                f"https://api.binance.com/api/v3/ticker/price?symbol={pair}",
+                timeout=5).json()["price"])
+        else:
+            v = get_yahoo_price(pair)
+        if v > 0: _pc[sym]=v; _pt[sym]=time.time()
+        return v if v > 0 else _pc.get(sym, 0)
+    except: return _pc.get(sym, 0)
 
 def get_all_prices():
+    """Batch fetch : Binance en une requête + Yahoo en parallèle."""
+    result = {}
+    # ── Crypto : une seule requête Binance ──────────────────────
     try:
-        r = requests.get("https://api.binance.com/api/v3/ticker/price",timeout=8).json()
-        pmap = {s["symbol"]:float(s["price"]) for s in r}
-        result={}
+        r = requests.get("https://api.binance.com/api/v3/ticker/price", timeout=8).json()
+        pmap = {s["symbol"]: float(s["price"]) for s in r}
         for sym, info in SYMBOLS.items():
-            p = pmap.get(info["pair"],0)
-            if p: _pc[sym]=p; _pt[sym]=time.time(); result[sym]=p
-        return result
-    except:
-        return {s:get_price(s) for s in SYMBOLS if get_price(s)>0}
-
-def candles(sym,n=70):
+            if info.get("src") == "binance":
+                p = pmap.get(info["pair"], 0)
+                if p: _pc[sym]=p; _pt[sym]=time.time(); result[sym]=p
+    except: pass
+    # ── Non-crypto : Yahoo (utilise le cache si récent) ─────────
+    import concurrent.futures
+    yahoo_syms = [s for s,i in SYMBOLS.items() if i.get("src")=="yahoo"]
+    def fetch_one(sym):
+        p = get_price(sym)
+        return sym, p
     try:
-        pair = SYMBOLS.get(sym,{}).get("pair","BTCUSDT")
-        r = requests.get(f"https://api.binance.com/api/v3/klines?symbol={pair}&interval=5m&limit={n}",
-                         timeout=10)
-        return [float(k[4]) for k in r.json()]
-    except: return [get_price(sym) or 100]*n
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+            for sym, p in ex.map(fetch_one, yahoo_syms):
+                if p > 0: result[sym] = p
+    except:
+        for sym in yahoo_syms:
+            p = get_price(sym)
+            if p > 0: result[sym] = p
+    return result
 
-def rsi(c,p=14):
-    if len(c)<p+1: return 50.0
-    g,l=[],[]
-    for i in range(1,len(c)): d=c[i]-c[i-1]; g.append(max(d,0)); l.append(max(-d,0))
-    ag=sum(g[:p])/p; al=sum(l[:p])/p
-    for i in range(p,len(g)): ag=(ag*(p-1)+g[i])/p; al=(al*(p-1)+l[i])/p
-    return 100-(100/(1+ag/al)) if al else 100.0
+# ═══════════════════════════════════════════════════════════
+#   MOTEUR D'ANALYSE v2.0 — Multi-indicateurs professionnels
+# ═══════════════════════════════════════════════════════════
 
-def ma(c,p): return sum(c[-p:])/p if len(c)>=p else c[-1]
+_fg_cache = {"value": 50, "ts": 0}  # Fear & Greed Index cache
+
+def get_yahoo_candles(ticker, tf="5m", limit=100):
+    """Bougies OHLCV depuis Yahoo Finance."""
+    try:
+        # Conversion timeframe Binance → Yahoo
+        tf_map = {"1m":"1m","5m":"5m","15m":"15m","1h":"60m","4h":"60m","1d":"1d"}
+        yf_tf  = tf_map.get(tf, "5m")
+        range_map = {"1m":"1d","5m":"5d","15m":"1mo","60m":"3mo","1d":"1y"}
+        yf_range = range_map.get(yf_tf, "5d")
+        url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+               f"?interval={yf_tf}&range={yf_range}")
+        r = requests.get(url, headers=_YF_HDR, timeout=10)
+        d = r.json()["chart"]["result"][0]
+        ts = d["timestamp"]
+        q  = d["indicators"]["quote"][0]
+        out = []
+        for i in range(len(ts)):
+            try:
+                c = {"t":ts[i],"o":float(q["open"][i] or 0),"h":float(q["high"][i] or 0),
+                     "l":float(q["low"][i] or 0),"c":float(q["close"][i] or 0),
+                     "v":float(q["volume"][i] or 0)}
+                if c["c"]>0: out.append(c)
+            except: pass
+        return out[-limit:] if len(out)>limit else out
+    except: return []
+
+def get_candles_full(sym, tf="5m", limit=100):
+    """Bougies complètes OHLCV — Binance ou Yahoo selon la source."""
+    info = SYMBOLS.get(sym, {})
+    src  = info.get("src", "binance")
+    pair = info.get("pair", sym+"USDT")
+    try:
+        if src == "binance":
+            r = requests.get(
+                f"https://api.binance.com/api/v3/klines?symbol={pair}&interval={tf}&limit={limit}",
+                timeout=10)
+            return [{"o":float(k[1]),"h":float(k[2]),"l":float(k[3]),
+                     "c":float(k[4]),"v":float(k[5]),"t":int(k[0])/1000}
+                    for k in r.json()]
+        else:
+            return get_yahoo_candles(pair, tf, limit)
+    except: return []
+
+def candles(sym, n=70):
+    """Compat : retourne seulement les closes."""
+    data = get_candles_full(sym, "5m", n)
+    return [c["c"] for c in data] if data else [get_price(sym) or 100]*n
+
+def calc_ema(closes, period):
+    """Exponential Moving Average."""
+    if not closes or len(closes) < period: return closes[-1] if closes else 0
+    k = 2 / (period + 1)
+    ema = sum(closes[:period]) / period
+    for price in closes[period:]:
+        ema = price * k + ema * (1 - k)
+    return ema
+
+def calc_rsi(closes, period=14):
+    """RSI — Relative Strength Index."""
+    if len(closes) < period + 1: return 50.0
+    gains, losses = [], []
+    for i in range(1, len(closes)):
+        d = closes[i] - closes[i-1]
+        gains.append(max(d, 0)); losses.append(max(-d, 0))
+    ag = sum(gains[:period]) / period; al = sum(losses[:period]) / period
+    for i in range(period, len(gains)):
+        ag = (ag*(period-1)+gains[i])/period; al = (al*(period-1)+losses[i])/period
+    return round(100 - (100 / (1 + ag/al)), 2) if al else 100.0
+
+def calc_macd(closes, fast=12, slow=26, sig=9):
+    """MACD + Signal line. Retourne (macd, signal, histogram)."""
+    if len(closes) < slow + sig: return 0, 0, 0
+    macd_hist = []
+    for i in range(slow - 1, len(closes)):
+        ef = calc_ema(closes[:i+1], fast)
+        es = calc_ema(closes[:i+1], slow)
+        macd_hist.append(ef - es)
+    if len(macd_hist) < sig: return 0, 0, 0
+    signal_line = calc_ema(macd_hist, sig)
+    macd_val = macd_hist[-1]
+    return round(macd_val, 6), round(signal_line, 6), round(macd_val - signal_line, 6)
+
+def calc_bollinger(closes, period=20, std_mult=2.0):
+    """Bandes de Bollinger. Retourne (upper, mid, lower)."""
+    if len(closes) < period: return closes[-1], closes[-1], closes[-1]
+    recent = closes[-period:]
+    mid = sum(recent) / period
+    variance = sum((x - mid)**2 for x in recent) / period
+    std = variance**0.5
+    return round(mid + std_mult*std, 6), round(mid, 6), round(mid - std_mult*std, 6)
+
+def calc_atr(candles_data, period=14):
+    """Average True Range — mesure la volatilité."""
+    if len(candles_data) < period + 1: return 0
+    trs = []
+    for i in range(1, len(candles_data)):
+        h = candles_data[i]["h"]; l = candles_data[i]["l"]; pc = candles_data[i-1]["c"]
+        trs.append(max(h-l, abs(h-pc), abs(l-pc)))
+    return round(sum(trs[-period:]) / period, 6)
+
+def calc_stoch_rsi(closes, rsi_p=14, stoch_p=14):
+    """Stochastic RSI — détecte les zones de surachat/survente."""
+    if len(closes) < rsi_p + stoch_p: return 50.0
+    rsi_vals = []
+    for i in range(rsi_p, len(closes)+1):
+        rsi_vals.append(calc_rsi(closes[:i], rsi_p))
+    recent_rsi = rsi_vals[-stoch_p:]
+    mn, mx = min(recent_rsi), max(recent_rsi)
+    if mx == mn: return 50.0
+    return round((rsi_vals[-1] - mn) / (mx - mn) * 100, 2)
+
+def get_fear_greed():
+    """Crypto Fear & Greed Index (alternative.me) — mise à jour horaire."""
+    if time.time() - _fg_cache["ts"] > 3600:
+        try:
+            r = requests.get("https://api.alternative.me/fng/?limit=1", timeout=5)
+            _fg_cache["value"] = int(r.json()["data"][0]["value"])
+            _fg_cache["ts"] = time.time()
+        except: pass
+    return _fg_cache["value"]
+
+def ma(c, p): return sum(c[-p:])/p if len(c) >= p else c[-1]
+
+def rsi(c, p=14): return calc_rsi(c, p)
 
 def get_signal(sym):
-    cl=candles(sym); p=get_price(sym) or cl[-1]; r=rsi(cl)
-    maf=ma(cl,5); mas=ma(cl,13); pr=cl[:-1]
-    bull=(ma(pr,5)<=ma(pr,13))and(maf>mas)
-    bear=(ma(pr,5)>=ma(pr,13))and(maf<mas)
-    if r<40 and bull: return "BUY",p,round(r,1)
-    if r>60 and bear: return "SELL",p,round(r,1)
-    return None,p,round(r,1)
+    """
+    Moteur de signal v2.0 — Système de score multi-indicateurs.
+    Score 0-10 par direction. Trade uniquement si score >= 6.
+    
+    Indicateurs utilisés :
+    • RSI 5m + RSI 1h (sur-acheté/sur-vendu)
+    • MACD 5m (momentum)
+    • Bandes de Bollinger 5m (position du prix)
+    • EMA 20/50 (tendance principale)
+    • Stochastic RSI (confirmation)
+    • Volume (confirmation du signal)
+    • Fear & Greed Index (sentiment marché)
+    """
+    try:
+        # ── Données multi-timeframes ──────────────────────────────
+        c5m = get_candles_full(sym, "5m", 100)
+        c1h = get_candles_full(sym, "1h", 60)
+
+        if not c5m or len(c5m) < 50:
+            return None, get_price(sym) or 0, 0
+
+        cl5 = [c["c"] for c in c5m]
+        cl1h = [c["c"] for c in c1h] if c1h else cl5
+        vol5 = [c["v"] for c in c5m]
+        price = cl5[-1]
+
+        # ── Calcul des indicateurs ────────────────────────────────
+        rsi5m    = calc_rsi(cl5, 14)
+        rsi1h    = calc_rsi(cl1h, 14) if len(cl1h) >= 15 else 50
+        macd_v, macd_sig, macd_hist = calc_macd(cl5)
+        bb_up, bb_mid, bb_low       = calc_bollinger(cl5)
+        ema20    = calc_ema(cl5, 20)
+        ema50    = calc_ema(cl5, 50)
+        stoch    = calc_stoch_rsi(cl5)
+        atr      = calc_atr(c5m)
+        fg       = get_fear_greed()
+
+        # ── Volume ────────────────────────────────────────────────
+        avg_vol = sum(vol5[-20:]) / 20 if len(vol5) >= 20 else vol5[-1]
+        vol_surge = vol5[-1] > avg_vol * 1.3  # +30% volume = confirmation
+
+        # ══ SCORING BUY ══════════════════════════════════════════
+        buy = 0
+        buy_reasons = []
+
+        if rsi5m < 35:          buy += 2.0; buy_reasons.append(f"RSI5m:{rsi5m:.0f}↓")
+        elif rsi5m < 45:        buy += 1.0; buy_reasons.append(f"RSI5m:{rsi5m:.0f}")
+
+        if rsi1h < 45:          buy += 1.0; buy_reasons.append(f"RSI1h:{rsi1h:.0f}")
+
+        if macd_hist > 0:       buy += 1.5; buy_reasons.append("MACD+")
+        if macd_v > macd_sig and macd_v < 0: buy += 1.0; buy_reasons.append("MACD↗")
+
+        if price < bb_low:      buy += 2.0; buy_reasons.append("BB_sous")
+        elif price < bb_mid:    buy += 0.5; buy_reasons.append("BB_mid-")
+
+        if price > ema20 > ema50:  buy += 1.0; buy_reasons.append("EMA↑")
+        elif price > ema20:        buy += 0.5; buy_reasons.append("EMA20↑")
+
+        if stoch < 20:          buy += 1.5; buy_reasons.append(f"StRSI:{stoch:.0f}↓")
+        elif stoch < 35:        buy += 0.5; buy_reasons.append(f"StRSI:{stoch:.0f}")
+
+        if fg <= 25:            buy += 1.5; buy_reasons.append(f"F&G:{fg}PEUR")
+        elif fg <= 40:          buy += 0.5; buy_reasons.append(f"F&G:{fg}")
+
+        if vol_surge and buy > 0: buy += 0.5; buy_reasons.append("VOL↑")
+
+        # ══ SCORING SELL ═════════════════════════════════════════
+        sell = 0
+        sell_reasons = []
+
+        if rsi5m > 65:          sell += 2.0; sell_reasons.append(f"RSI5m:{rsi5m:.0f}↑")
+        elif rsi5m > 55:        sell += 1.0; sell_reasons.append(f"RSI5m:{rsi5m:.0f}")
+
+        if rsi1h > 55:          sell += 1.0; sell_reasons.append(f"RSI1h:{rsi1h:.0f}")
+
+        if macd_hist < 0:       sell += 1.5; sell_reasons.append("MACD-")
+        if macd_v < macd_sig and macd_v > 0: sell += 1.0; sell_reasons.append("MACD↘")
+
+        if price > bb_up:       sell += 2.0; sell_reasons.append("BB_sur")
+        elif price > bb_mid:    sell += 0.5; sell_reasons.append("BB_mid+")
+
+        if price < ema20 < ema50:  sell += 1.0; sell_reasons.append("EMA↓")
+        elif price < ema20:        sell += 0.5; sell_reasons.append("EMA20↓")
+
+        if stoch > 80:          sell += 1.5; sell_reasons.append(f"StRSI:{stoch:.0f}↑")
+        elif stoch > 65:        sell += 0.5; sell_reasons.append(f"StRSI:{stoch:.0f}")
+
+        if fg >= 75:            sell += 1.5; sell_reasons.append(f"F&G:{fg}GREED")
+        elif fg >= 60:          sell += 0.5; sell_reasons.append(f"F&G:{fg}")
+
+        if vol_surge and sell > 0: sell += 0.5; sell_reasons.append("VOL↑")
+
+        # ══ DÉCISION (seuil 6/10) ════════════════════════════════
+        buy  = round(min(buy, 10), 1)
+        sell = round(min(sell, 10), 1)
+
+        if buy >= 6 and buy > sell:
+            score_str = f"{buy}/10 | " + " · ".join(buy_reasons[:5])
+            return "BUY", price, score_str
+        if sell >= 6 and sell > buy:
+            score_str = f"{sell}/10 | " + " · ".join(sell_reasons[:5])
+            return "SELL", price, score_str
+
+        return None, price, f"B:{buy} S:{sell}"
+
+    except Exception as e:
+        try: return None, get_price(sym) or 0, "ERR"
+        except: return None, 0, "ERR"
 
 def calc_pnl(d,e,v,cp):
     return round(float(v)*(float(cp)-float(e)),4) if d=="BUY" else round(float(v)*(float(e)-float(cp)),4)
@@ -548,6 +846,7 @@ def get_ohlc(sym,tf="5m",limit=100):
 #   TRADING ENGINE
 # ══════════════════════════════════════════════════════════════
 _threads={}
+_cooldown={}  # {(uid,sym): timestamp}
 
 def tg(msg):
     """Envoie une notification Telegram (privé + groupe si configuré)."""
@@ -562,35 +861,187 @@ def tg(msg):
                          timeout=8)
         except: pass
 
+
+# ═══════════════════════════════════════════════════════════════
+#   METAAPI — Client REST pour Vantage Markets (vrai argent)
+# ═══════════════════════════════════════════════════════════════
+
+# Mapping ZyCrypto → MT5 Vantage
+META_SYMBOLS = {
+    "BTC":"BTCUSD","ETH":"ETHUSD","BNB":"BNBUSD","SOL":"SOLUSD",
+    "XRP":"XRPUSD","DOGE":"DOGEUSD","ADA":"ADAUSD","LTC":"LTCUSD",
+    "DOT":"DOTUSD","LINK":"LINKUSD","AVAX":"AVAXUSD","MATIC":"MATICUSD",
+    "UNI":"UNIUSD","ATOM":"ATOMUSD","NEAR":"NEARUSD",
+    "GOLD":"XAUUSD","SILVER":"XAGUSD","PLAT":"XPTUSD","COPPER":"XCUUSD",
+    "EURUSD":"EURUSD","GBPUSD":"GBPUSD","USDJPY":"USDJPY","USDCHF":"USDCHF",
+    "AUDUSD":"AUDUSD","USDCAD":"USDCAD","NZDUSD":"NZDUSD","EURGBP":"EURGBP",
+    "EURJPY":"EURJPY","GBPJPY":"GBPJPY",
+    "US500":"US500","US100":"NAS100","US30":"US30",
+    "DE40":"DE40","UK100":"UK100","JP225":"JP225","FR40":"FR40",
+    "OIL":"USOIL","BRENT":"UKOIL","NATGAS":"NATGAS",
+    "WHEAT":"WHEAT","CORN":"CORN","COFFEE":"COFFEE",
+    "SPY":"SPY","QQQ":"QQQ","GLD":"GLD",
+}
+
+# Tailles de contrat MT5 (pour calcul des lots)
+META_LOTS = {
+    "EURUSD":100000,"GBPUSD":100000,"USDJPY":100000,"USDCHF":100000,
+    "AUDUSD":100000,"USDCAD":100000,"NZDUSD":100000,"EURGBP":100000,
+    "EURJPY":100000,"GBPJPY":100000,
+    "XAUUSD":100,"XAGUSD":5000,"XPTUSD":50,
+    "US500":1,"NAS100":1,"US30":1,"DE40":1,"UK100":1,"JP225":1,
+    "BTCUSD":1,"ETHUSD":1,"LTCUSD":1,"BNBUSD":1,
+    "USOIL":1000,"UKOIL":1000,"NATGAS":10000,
+}
+
+_meta_url = lambda path: f"https://mt-client-api-v1.{META_REGION}.agiliumtrade.ai{path}"
+_meta_prov = lambda path: f"https://mt-provisioning-api-v1.agiliumtrade.agiliumtrade.ai{path}"
+_meta_hdr  = lambda: {"auth-token":META_TOKEN,"Content-Type":"application/json"}
+
+def meta_account_info():
+    """Solde et équité réels depuis MT5."""
+    if not META_TOKEN: return None
+    try:
+        r = requests.get(
+            _meta_url(f"/users/current/accounts/{META_ACCOUNT}/account-information"),
+            headers=_meta_hdr(), timeout=15)
+        return r.json() if r.status_code==200 else None
+    except: return None
+
+def meta_positions_live():
+    """Positions ouvertes sur MT5."""
+    if not META_TOKEN: return []
+    try:
+        r = requests.get(
+            _meta_url(f"/users/current/accounts/{META_ACCOUNT}/positions"),
+            headers=_meta_hdr(), timeout=15)
+        return r.json() if r.status_code==200 else []
+    except: return []
+
+def meta_connection_status():
+    """Statut de connexion MT5 : CONNECTED|DISCONNECTED|DEPLOYING|ERROR."""
+    if not META_TOKEN: return "NO_CONFIG"
+    try:
+        r = requests.get(
+            _meta_url(f"/users/current/accounts/{META_ACCOUNT}/connection-status"),
+            headers=_meta_hdr(), timeout=10)
+        if r.status_code==200: return r.json().get("status","UNKNOWN")
+    except: pass
+    return "ERROR"
+
+def meta_deploy():
+    """Déploie le compte MetaAPI (one-time)."""
+    if not META_TOKEN: return False
+    try:
+        r = requests.post(
+            _meta_prov(f"/users/current/accounts/{META_ACCOUNT}/deploy"),
+            headers=_meta_hdr(), timeout=30)
+        return r.status_code in (200,204)
+    except: return False
+
+def meta_calc_lots(sym, mise, lev, price):
+    """Calcule le volume en lots MT5 (min 0.01)."""
+    mt = META_SYMBOLS.get(sym, sym)
+    cs = META_LOTS.get(mt, 1)
+    notional = float(mise) * min(int(lev), 500)
+    if price<=0 or cs<=0: return 0.01
+    volume = notional / (price * cs)
+    return max(0.01, round(volume*100)/100)  # Arrondi au 0.01 lot
+
+def meta_trade(sym, direction, price, mise, lev, tp_price, sl_price):
+    """Ouvre un vrai trade via MetaAPI. Retourne le ticket MT5 ou None."""
+    if not META_TOKEN: return None
+    mt = META_SYMBOLS.get(sym, sym)
+    vol = meta_calc_lots(sym, mise, lev, price)
+    body = {
+        "actionType": "ORDER_TYPE_BUY" if direction=="BUY" else "ORDER_TYPE_SELL",
+        "symbol": mt, "volume": vol, "comment": "ZyCrypto"
+    }
+    if tp_price and tp_price>0: body["takeProfit"] = round(float(tp_price),5)
+    if sl_price and sl_price>0: body["stopLoss"]   = round(float(sl_price),5)
+    try:
+        r = requests.post(
+            _meta_url(f"/users/current/accounts/{META_ACCOUNT}/trade"),
+            headers=_meta_hdr(), json=body, timeout=25)
+        if r.status_code in (200,201):
+            d = r.json()
+            code_ = d.get("numericCode",0)
+            if code_ in (10008,10009,10010):  # DONE/PLACED
+                ticket = d.get("positionId") or d.get("orderId","")
+                return {"ticket":str(ticket),"vol":vol}
+            else:
+                print(f"⚠️ MetaAPI trade: {d.get('message',d)}")
+    except Exception as e:
+        print(f"⚠️ MetaAPI exception: {e}")
+    return None
+
+def meta_close(ticket):
+    """Ferme un trade MT5 par son ticket."""
+    if not META_TOKEN: return False
+    body = {"actionType":"POSITION_CLOSE_ID","positionId":str(ticket)}
+    try:
+        r = requests.post(
+            _meta_url(f"/users/current/accounts/{META_ACCOUNT}/trade"),
+            headers=_meta_hdr(), json=body, timeout=25)
+        if r.status_code in (200,201):
+            d = r.json()
+            return d.get("numericCode",0) in (10008,10009,10010)
+    except: pass
+    return False
+
 def open_trade(user_id, sym, direction, price, tp_pct=None, sl_pct=None):
     cfg = get_user_by_id(user_id)
     if not cfg: return None
-    bal = float(cfg["balance"]); mise = float(cfg["mise"])
-    if bal < mise: return None
-    lev = int(cfg["levier"])
+    mise = float(cfg["mise"]); lev = int(cfg["levier"])
     tp_p = (tp_pct if tp_pct is not None else float(cfg["tp"])) / 100
     sl_p = (sl_pct if sl_pct is not None else float(cfg["sl"])) / 100
-    vol = max(round((mise*lev/price)/0.0001)*0.0001, 0.0001)
     tp = round(price*(1+tp_p),6) if direction=="BUY" else round(price*(1-tp_p),6)
     sl = round(price*(1-sl_p),6) if direction=="BUY" else round(price*(1+sl_p),6)
-    # SQLITE: synchrone, jamais de race condition
-    db = get_db()
-    db.execute("UPDATE users SET balance=balance-? WHERE id=?", (mise, user_id))
-    db.commit(); db.close()
-    save_position(user_id, sym, direction, price, vol, tp, sl, mise)
-    return {"v":vol,"tp":tp,"sl":sl,"m":mise}
+
+    if REAL_TRADING and META_TOKEN and META_ACCOUNT:
+        # ── MODE RÉEL : trade via MetaAPI ──────────────────────
+        result = meta_trade(sym, direction, price, mise, lev, tp, sl)
+        if not result: return None
+        ticket = result["ticket"]; vol = result["vol"]
+        # Sauvegarder avec ticket MT5 comme pos_id
+        db = get_db()
+        db.execute("""INSERT INTO positions (id,user_id,symbol,direction,entry,volume,tp,sl,marge,tpsl_active)
+                      VALUES (?,?,?,?,?,?,?,?,?,1)""",
+                   (ticket,user_id,sym,direction,price,vol,tp,sl,mise))
+        db.commit(); db.close()
+        return {"pid":ticket,"v":vol,"tp":tp,"sl":sl,"m":mise}
+    else:
+        # ── MODE DÉMO : simulation ──────────────────────────────
+        bal = float(cfg["balance"])
+        if bal < mise: return None
+        vol = max(round((mise*lev/price)/0.0001)*0.0001, 0.0001)
+        db = get_db()
+        db.execute("UPDATE users SET balance=balance-? WHERE id=?", (mise, user_id))
+        db.commit(); db.close()
+        pid = save_position(user_id, sym, direction, price, vol, tp, sl, mise)
+        return {"pid":pid,"v":vol,"tp":tp,"sl":sl,"m":mise}
 
 def close_trade_by_id(pos_id, cp, reason):
-    """Ferme une position par son ID."""
+    """Ferme une position par son ID (local ou MetaAPI)."""
     p = get_pos_by_id(pos_id)
     if not p: return None
     sym = p["symbol"]; user_id = p["user_id"]
     pnl = calc_pnl(p["direction"], p["entry"], p["volume"], cp)
-    db = get_db()
-    db.execute("UPDATE users SET balance=balance+? WHERE id=?", (float(p["marge"])+pnl, user_id))
-    db.commit(); db.close()
-    save_trade(user_id, sym, p["direction"], float(p["entry"]), float(cp), float(p["volume"]), pnl, reason)
-    delete_position_by_id(pos_id)
+
+    if REAL_TRADING and META_TOKEN and META_ACCOUNT:
+        # ── MODE RÉEL : fermer via MetaAPI ─────────────────────
+        ok = meta_close(pos_id)  # pos_id = ticket MT5
+        if not ok: return None
+        # PnL réel sera reflété dans le solde MT5
+        save_trade(user_id, sym, p["direction"], float(p["entry"]), float(cp), float(p["volume"]), pnl, reason)
+        delete_position_by_id(pos_id)
+    else:
+        # ── MODE DÉMO : simulation ──────────────────────────────
+        db = get_db()
+        db.execute("UPDATE users SET balance=balance+? WHERE id=?", (float(p["marge"])+pnl, user_id))
+        db.commit(); db.close()
+        save_trade(user_id, sym, p["direction"], float(p["entry"]), float(cp), float(p["volume"]), pnl, reason)
+        delete_position_by_id(pos_id)
     return pnl
 
 def close_trade(user_id, sym, cp, reason):
@@ -630,15 +1081,16 @@ def trading_loop(user_id):
                                f"`{float(p['e']):.4f}` → `{price:.4f}`\n"
                                f"Profit:`{pnl:+.4f}€` Solde:`{cfg2['balance']:.2f}€`")
                         en=False
-                # BOT: ouvre seulement si aucune position sur ce symbole
-                if not en and sn in("BUY","SELL"):
+                in_cooldown=(time.time()-_cooldown.get((user_id,sym),0))<BOT_COOLDOWN
+                if not en and not in_cooldown and sn in("BUY","SELL"):
                     cfg = get_user_by_id(user_id)
                     if cfg and float(cfg["balance"])>=float(cfg["mise"]):
                         t = open_trade(user_id, sym, sn, price)
                         if t:
                             info = SYMBOLS[sym]
-                            tg(f"⚡ *{'🟢 LONG' if sn=='BUY' else '🔴 SHORT'}* {info['icon']} {sym}\n"
-                               f"`{price:.4f}$` RSI:`{rv}`")
+                            tg(f"⚡ *{'🟢 LONG' if sn=='BUY' else '🔴 SHORT'}* {info['icon']} {sym} — BOT\n"
+                               f"`{price:.4f}$` | Score: {rv}\n"
+                               f"👤 {uname}")
             except Exception as e:
                 pass
             time.sleep(0.3)
@@ -832,6 +1284,10 @@ hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,
 .sn{font-family:'Orbitron',monospace;font-size:14px;font-weight:900;color:var(--g)}.sl{font-size:8px;color:rgba(255,255,255,.2);margin-top:2px}
 .gg{color:#22c55e}.rr{color:#ef4444}
 .tt{font-family:'Orbitron',monospace;font-size:8px;letter-spacing:3px;color:rgba(245,197,24,.28);margin-bottom:6px}
+.cat-row{display:flex;gap:4px;overflow-x:auto;margin-bottom:6px;scrollbar-width:none}
+.cat-row::-webkit-scrollbar{display:none}
+.cat-btn{background:rgba(245,197,24,.04);border:1px solid rgba(245,197,24,.1);color:rgba(255,255,255,.3);padding:4px 9px;border-radius:6px;font-family:'Orbitron',monospace;font-size:7px;cursor:pointer;white-space:nowrap;flex-shrink:0;letter-spacing:1px}
+.cat-btn.a{background:rgba(245,197,24,.12);border-color:rgba(245,197,24,.35);color:var(--g)}
 .sym-row{display:flex;gap:5px;overflow-x:auto;margin-bottom:8px;scrollbar-width:none}
 .sym-row::-webkit-scrollbar{display:none}
 .sym-btn{background:rgba(245,197,24,.05);border:1px solid rgba(245,197,24,.1);color:rgba(255,255,255,.45);padding:5px 10px;border-radius:8px;font-family:'Orbitron',monospace;font-size:8px;cursor:pointer;white-space:nowrap;flex-shrink:0}
@@ -894,7 +1350,11 @@ hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,
 <div id="p1" class="pg a">
 <div class="logo">⚡ ZYCRYPTO</div>
 <div class="sub">MULTI-CRYPTO · CLOUD · LIVE</div>
-<div class="sr"><div class="dot" id="d1"></div><span class="st" id="s1">Connexion...</span></div>
+<div class="sr" style="flex-wrap:wrap;gap:6px">
+  <div class="dot" id="d1"></div>
+  <span class="st" id="s1">Connexion...</span>
+  <span id="mode-badge" style="font-size:7px;font-family:Orbitron,monospace;padding:2px 7px;border-radius:10px;background:rgba(245,197,24,.1);border:1px solid rgba(245,197,24,.2);color:rgba(245,197,24,.6)">DÉMO</span>
+</div>
 <div class="ticker" id="ticker"></div>
 <div class="bal">
   <div><div class="blab">SOLDE DÉMO</div><div class="bval" id="bval">--</div></div>
@@ -917,6 +1377,7 @@ hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,
   </div><hr>
 </div>
 <div class="tt">📊 CHOISIR LA CRYPTO</div>
+<div class="cat-row" id="cat-row"></div>
 <div class="sym-row" id="sym-sel"></div>
 <div class="tt" id="trade-tt">ORDRES — BTC</div>
 <div class="g2b">
@@ -949,10 +1410,33 @@ hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,
 <div class="logo" style="font-size:15px;padding:10px 0 4px">📈 GRAPHIQUE LIVE</div>
 <div class="ctb">
   <select id="ch-sym" onchange="lc()" style="background:rgba(245,197,24,.06);border:1px solid rgba(245,197,24,.12);color:var(--g);padding:5px 10px;border-radius:8px;font-family:'Orbitron',monospace;font-size:8px;cursor:pointer">
-    <option value="BTC">₿ BTC</option><option value="ETH">Ξ ETH</option>
-    <option value="BNB">◈ BNB</option><option value="SOL">◎ SOL</option>
-    <option value="XRP">✕ XRP</option><option value="DOGE">Ð DOGE</option>
-    <option value="GOLD">🥇 OR</option>
+    <optgroup label="── CRYPTO ──">
+    <option value="BTC">₿ Bitcoin</option><option value="ETH">Ξ Ethereum</option>
+    <option value="BNB">◈ BNB</option><option value="SOL">◎ Solana</option>
+    <option value="XRP">✕ Ripple</option><option value="DOGE">Ð Dogecoin</option>
+    <option value="ADA">₳ Cardano</option><option value="LTC">Ł Litecoin</option>
+    <option value="AVAX">🔺 Avalanche</option><option value="LINK">⬡ Chainlink</option>
+    <option value="DOT">● Polkadot</option><option value="MATIC">⬟ Polygon</option>
+    <option value="ATOM">⚛ Cosmos</option>
+    </optgroup><optgroup label="── MÉTAUX ──">
+    <option value="GOLD">🥇 Or (XAU)</option><option value="SILVER">🥈 Argent</option>
+    <option value="PLAT">💿 Platine</option><option value="COPPER">🔶 Cuivre</option>
+    </optgroup><optgroup label="── FOREX ──">
+    <option value="EURUSD">€$ EUR/USD</option><option value="GBPUSD">£$ GBP/USD</option>
+    <option value="USDJPY">$¥ USD/JPY</option><option value="USDCHF">$Fr USD/CHF</option>
+    <option value="AUDUSD">A$ AUD/USD</option><option value="GBPJPY">£¥ GBP/JPY</option>
+    </optgroup><optgroup label="── INDICES ──">
+    <option value="US500">📊 S&P 500</option><option value="US100">💻 NASDAQ</option>
+    <option value="US30">🏛 Dow Jones</option><option value="DE40">🇩🇪 DAX</option>
+    <option value="UK100">🇬🇧 FTSE</option><option value="JP225">🗻 Nikkei</option>
+    </optgroup><optgroup label="── MATIÈRES ──">
+    <option value="OIL">🛢 Pétrole WTI</option><option value="NATGAS">🔥 Gaz Naturel</option>
+    <option value="WHEAT">🌾 Blé</option><option value="CORN">🌽 Maïs</option>
+    <option value="COFFEE">☕ Café</option>
+    </optgroup><optgroup label="── ETF ──">
+    <option value="SPY">🕵 SPY</option><option value="QQQ">📱 QQQ</option>
+    <option value="GLD">🏅 GLD (Or)</option>
+    </optgroup>
   </select>
   <span style="flex:1"></span>
   <button class="fbt" id="fb-1m" onclick="setTf('1m')">1M</button>
@@ -1012,10 +1496,25 @@ hr{border:none;height:1px;background:linear-gradient(90deg,transparent,rgba(245,
     <div>
       <div style="font-size:8px;color:rgba(245,197,24,.4);font-family:Orbitron,monospace;margin-bottom:4px">CRYPTO</div>
       <select id="tr-sym" style="width:100%;background:rgba(245,197,24,.04);border:1px solid rgba(245,197,24,.12);border-radius:8px;padding:9px;color:#fff;font-family:Rajdhani,sans-serif;font-size:13px;outline:none">
+        <optgroup label="── CRYPTO ──">
         <option value="BTC">₿ Bitcoin</option><option value="ETH">Ξ Ethereum</option>
         <option value="BNB">◈ BNB</option><option value="SOL">◎ Solana</option>
-        <option value="XRP">✕ XRP</option><option value="DOGE">Ð Dogecoin</option>
-        <option value="GOLD">🥇 Or</option>
+        <option value="XRP">✕ Ripple</option><option value="DOGE">Ð Dogecoin</option>
+        <option value="ADA">₳ Cardano</option><option value="LTC">Ł Litecoin</option>
+        <option value="AVAX">🔺 Avalanche</option>
+        </optgroup><optgroup label="── MÉTAUX ──">
+        <option value="GOLD">🥇 Or (XAU)</option><option value="SILVER">🥈 Argent</option>
+        <option value="PLAT">💿 Platine</option>
+        </optgroup><optgroup label="── FOREX ──">
+        <option value="EURUSD">€$ EUR/USD</option><option value="GBPUSD">£$ GBP/USD</option>
+        <option value="USDJPY">$¥ USD/JPY</option><option value="AUDUSD">A$ AUD/USD</option>
+        </optgroup><optgroup label="── INDICES ──">
+        <option value="US500">📊 S&P 500</option><option value="US100">💻 NASDAQ</option>
+        <option value="US30">🏛 Dow Jones</option>
+        </optgroup><optgroup label="── MATIÈRES ──">
+        <option value="OIL">🛢 Pétrole WTI</option><option value="NATGAS">🔥 Gaz Naturel</option>
+        <option value="WHEAT">🌾 Blé</option><option value="COFFEE">☕ Café</option>
+        </optgroup>
       </select>
     </div>
     <div>
@@ -1060,31 +1559,80 @@ var TK=localStorage.getItem('zt'), IS_ADMIN=localStorage.getItem('za')==='1';
 if(!TK){window.location.replace('/');throw 0;}
 
 var SYMS={
-  BTC:{name:'Bitcoin',icon:'₿'},ETH:{name:'Ethereum',icon:'Ξ'},
-  BNB:{name:'BNB',icon:'◈'},SOL:{name:'Solana',icon:'◎'},
-  XRP:{name:'Ripple',icon:'✕'},DOGE:{name:'Dogecoin',icon:'Ð'},
-  GOLD:{name:'Or',icon:'🥇'}
+  BTC:{name:'Bitcoin',icon:'₿',cat:'CRYPTO'},ETH:{name:'Ethereum',icon:'Ξ',cat:'CRYPTO'},
+  BNB:{name:'BNB',icon:'◈',cat:'CRYPTO'},SOL:{name:'Solana',icon:'◎',cat:'CRYPTO'},
+  XRP:{name:'Ripple',icon:'✕',cat:'CRYPTO'},DOGE:{name:'Dogecoin',icon:'Ð',cat:'CRYPTO'},
+  ADA:{name:'Cardano',icon:'₳',cat:'CRYPTO'},LTC:{name:'Litecoin',icon:'Ł',cat:'CRYPTO'},
+  DOT:{name:'Polkadot',icon:'●',cat:'CRYPTO'},LINK:{name:'Chainlink',icon:'⬡',cat:'CRYPTO'},
+  AVAX:{name:'Avalanche',icon:'🔺',cat:'CRYPTO'},MATIC:{name:'Polygon',icon:'⬟',cat:'CRYPTO'},
+  UNI:{name:'Uniswap',icon:'🦄',cat:'CRYPTO'},ATOM:{name:'Cosmos',icon:'⚛',cat:'CRYPTO'},
+  NEAR:{name:'NEAR',icon:'Ν',cat:'CRYPTO'},
+  GOLD:{name:'Or XAU',icon:'🥇',cat:'METAL'},SILVER:{name:'Argent',icon:'🥈',cat:'METAL'},
+  PLAT:{name:'Platine',icon:'💿',cat:'METAL'},COPPER:{name:'Cuivre',icon:'🔶',cat:'METAL'},
+  EURUSD:{name:'EUR/USD',icon:'€$',cat:'FOREX'},GBPUSD:{name:'GBP/USD',icon:'£$',cat:'FOREX'},
+  USDJPY:{name:'USD/JPY',icon:'$¥',cat:'FOREX'},USDCHF:{name:'USD/CHF',icon:'$Fr',cat:'FOREX'},
+  AUDUSD:{name:'AUD/USD',icon:'A$',cat:'FOREX'},USDCAD:{name:'USD/CAD',icon:'C$',cat:'FOREX'},
+  NZDUSD:{name:'NZD/USD',icon:'NZ$',cat:'FOREX'},EURGBP:{name:'EUR/GBP',icon:'€£',cat:'FOREX'},
+  EURJPY:{name:'EUR/JPY',icon:'€¥',cat:'FOREX'},GBPJPY:{name:'GBP/JPY',icon:'£¥',cat:'FOREX'},
+  US500:{name:'S&P 500',icon:'📊',cat:'INDEX'},US100:{name:'NASDAQ',icon:'💻',cat:'INDEX'},
+  US30:{name:'Dow Jones',icon:'🏛',cat:'INDEX'},DE40:{name:'DAX',icon:'🇩🇪',cat:'INDEX'},
+  UK100:{name:'FTSE 100',icon:'🇬🇧',cat:'INDEX'},JP225:{name:'Nikkei',icon:'🗻',cat:'INDEX'},
+  FR40:{name:'CAC 40',icon:'🇫🇷',cat:'INDEX'},
+  SPY:{name:'SPY ETF',icon:'🕵',cat:'ETF'},QQQ:{name:'QQQ ETF',icon:'📱',cat:'ETF'},
+  GLD:{name:'Gold ETF',icon:'🏅',cat:'ETF'},
+  OIL:{name:'Pétrole WTI',icon:'🛢',cat:'COMM'},BRENT:{name:'Brent',icon:'⛽',cat:'COMM'},
+  NATGAS:{name:'Gaz Naturel',icon:'🔥',cat:'COMM'},WHEAT:{name:'Blé',icon:'🌾',cat:'COMM'},
+  CORN:{name:'Maïs',icon:'🌽',cat:'COMM'},COFFEE:{name:'Café',icon:'☕',cat:'COMM'}
 };
+var CAT_LABELS={ALL:'TOUT',CRYPTO:'CRYPTO',METAL:'MÉTAUX',FOREX:'FOREX',INDEX:'INDICES',ETF:'ETF',COMM:'MATIÈRES'};
 var SEL='BTC', cp=1;
 var H={'Content-Type':'application/json','Authorization':'Bearer '+TK};
 var _prices={}, _positions={};
 
 if(IS_ADMIN) document.querySelectorAll('.admin-only').forEach(function(e){e.style.display='block';});
 
-// Symbol buttons
-var sr=document.getElementById('sym-sel');
-Object.keys(SYMS).forEach(function(k){
-  var b=document.createElement('button');
-  b.className='sym-btn'+(k==='BTC'?' a':'');
-  b.textContent=SYMS[k].icon+' '+k;
-  b.onclick=function(){
-    SEL=k;
-    document.querySelectorAll('.sym-btn').forEach(function(x){x.classList.remove('a');});
-    b.classList.add('a');
-    document.getElementById('trade-tt').textContent='ORDRES — '+k;
-  };
-  sr.appendChild(b);
-});
+// Catégories
+var _curCat='CRYPTO';
+function buildCatBtns(){
+  var cr=document.getElementById('cat-row'); if(!cr)return;
+  Object.keys(CAT_LABELS).forEach(function(cat){
+    var b=document.createElement('button');
+    b.className='cat-btn'+(cat==='CRYPTO'?' a':'');
+    b.textContent=CAT_LABELS[cat]; b.dataset.cat=cat;
+    b.onclick=function(){
+      _curCat=cat;
+      document.querySelectorAll('.cat-btn').forEach(function(x){x.classList.remove('a');});
+      b.classList.add('a');
+      filterSym(cat);
+    };
+    cr.appendChild(b);
+  });
+}
+function filterSym(cat){
+  document.querySelectorAll('.sym-btn').forEach(function(b){
+    var s=SYMS[b.dataset.sym];
+    b.style.display=(cat==='ALL'||!s||s.cat===cat)?'':'none';
+  });
+}
+function buildSymBtns(){
+  var sr=document.getElementById('sym-sel'); if(!sr)return;
+  Object.keys(SYMS).forEach(function(k){
+    var b=document.createElement('button');
+    b.className='sym-btn'+(k==='BTC'?' a':'');
+    b.dataset.sym=k;
+    b.textContent=SYMS[k].icon+' '+k;
+    b.style.display=SYMS[k].cat==='CRYPTO'?'':'none';
+    b.onclick=function(){
+      SEL=k;
+      document.querySelectorAll('.sym-btn').forEach(function(x){x.classList.remove('a');});
+      b.classList.add('a');
+      document.getElementById('trade-tt').textContent='ORDRES — '+k;
+    };
+    sr.appendChild(b);
+  });
+}
+buildCatBtns();
+buildSymBtns();
 
 function sp(n){
   document.querySelectorAll('.pg').forEach(function(p){p.classList.remove('a');});
@@ -1129,6 +1677,13 @@ function rf(){
       // Status
       var on=d.actif||false;
       document.getElementById('d1').className='dot '+(on?'on':'off');
+      // Badge mode
+      var mb=document.getElementById('mode-badge');
+      if(mb){
+        if(d.meta_status==='REAL:CONNECTED'){mb.textContent='🟢 RÉEL';mb.style.color='#4ade80';mb.style.borderColor='rgba(34,197,94,.3)';mb.style.background='rgba(34,197,94,.1)';}
+        else if(d.meta_status==='REAL:OFFLINE'){mb.textContent='🟡 RÉEL OFFLINE';mb.style.color='#fbbf24';}
+        else{mb.textContent='DÉMO';mb.style.color='rgba(245,197,24,.6)';}
+      }
       document.getElementById('s1').textContent=on?'🟢 BOT ACTIF':'🔴 BOT ARRÊTÉ';
       document.getElementById('d2').className='dot '+(on?'on':'off');
       document.getElementById('s2').textContent=on?'BOT ACTIF':'BOT ARRÊTÉ';
@@ -1392,6 +1947,23 @@ class H(BaseHTTPRequestHandler):
             elif p=="/dashboard": self.sh(DASH_HTML)
             elif p in("/ping","/health"):
                 self.send_response(200); self.send_header("Content-Type","text/plain"); self.end_headers(); self.wfile.write(b"OK")
+            elif p=="/api/meta/status":
+                u=auth(self.tok())
+                if not u: self.sj({"ok":False},401); return
+                status = meta_connection_status()
+                ai = meta_account_info() if META_TOKEN else None
+                self.sj({"ok":True,"status":status,
+                    "balance":ai.get("balance",0) if ai else 0,
+                    "equity":ai.get("equity",0) if ai else 0,
+                    "real_trading":REAL_TRADING,
+                    "account":META_ACCOUNT})
+
+            elif p=="/api/meta/deploy":
+                u=auth(self.tok())
+                if not u or not u["is_admin"]: self.sj({"ok":False},403); return
+                ok = meta_deploy()
+                self.sj({"ok":ok,"msg":"✅ Compte déployé" if ok else "❌ Déploiement échoué"})
+
             elif p=="/api/me":
                 u=auth(self.tok())
                 if not u: self.sj({"ok":False},401); return
@@ -1407,7 +1979,21 @@ class H(BaseHTTPRequestHandler):
                 positions=get_positions(u["id"])  # liste
                 trades=get_trades(u["id"])
                 prices=get_all_prices()
-                self.sj({"ok":True,"actif":bot_on,"balance":round(float(u["balance"]),2),
+                # Solde : réel (MT5) ou démo (local)
+                balance = round(float(u["balance"]),2)
+                real_mode = REAL_TRADING and bool(META_TOKEN) and bool(META_ACCOUNT)
+                meta_status = "DEMO"
+                equity = balance
+                if real_mode:
+                    ai = meta_account_info()
+                    if ai:
+                        balance = round(float(ai.get("balance",balance)),2)
+                        equity  = round(float(ai.get("equity",balance)),2)
+                        meta_status = "REAL:CONNECTED"
+                    else:
+                        meta_status = "REAL:OFFLINE"
+                self.sj({"ok":True,"actif":bot_on,"balance":balance,"equity":equity,
+                    "real_mode":real_mode,"meta_status":meta_status,
                     "levier":u["levier"],"mise":u["mise"],"tp":u["tp"],"sl":u["sl"],
                     "prices":prices,"positions":positions,"trades":trades})
             elif p=="/api/triggers":
@@ -1570,9 +2156,11 @@ class H(BaseHTTPRequestHandler):
                     pid=c[len("close_pos_"):]
                     row=get_pos_by_id(pid)
                     if row and row["user_id"]==uid:
-                        price=get_price(row["symbol"]) or float(row["entry"])
+                        sym_c=row["symbol"]
+                        price=get_price(sym_c) or float(row["entry"])
                         pnl=close_trade_by_id(pid,price,"🔒 Fermeture manuelle")
                         if pnl is not None:
+                            _cooldown[(uid,sym_c)]=time.time()
                             threading.Thread(target=save_to_github,daemon=True).start()
                             u2=get_user_by_id(uid)
                             msg=f"🔒 {row['symbol']} fermé | {pnl:+.4f}€ | Solde: {u2['balance']:.2f}€"
@@ -1646,10 +2234,12 @@ def run():
             self.socket.setsockopt(sk.SOL_SOCKET,sk.SO_REUSEADDR,1)
             super().server_bind()
 
-    print(f"⚡ ZYCRYPTO PLATFORM v1.3 — SQLite + GitHub Backup")
+    print(f"⚡ ZYCRYPTO PLATFORM v2.0 — MetaAPI Ready")
     print(f"   Admin: {ADMIN_EMAIL}")
-    print(f"   Port: {PORT}")
-    print(f"   DB: {DB_PATH}")
+    print(f"   Port:  {PORT}")
+    print(f"   Mode:  {'🟢 RÉEL (Vantage MT5)' if REAL_TRADING and META_TOKEN else '🟡 DÉMO'}")
+    if META_TOKEN:
+        print(f"   MetaAPI Account: {META_ACCOUNT}")
 
     init_db()
     load_from_github()
